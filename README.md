@@ -32,3 +32,9 @@ Notes:
 - The synced tables were created once with `databricks postgres create-synced-table` (SNAPSHOT); the job's last task re-snapshots them.
 - App SP `e47b15f2-c014-4729-bcb0-759c6bfc3554`: if the app is recreated, regenerate and re-run `src/governance/grant_app_sp.sql`, plus `GRANT USAGE/SELECT ON SCHEMA e2e` in Lakebase.
 - The live system-table views cover 7 days (a 30-day scan of `system.access.audit` is too slow for the app).
+
+SOC assessment app
+https://febar-e2e-console-1444828305810485.aws.databricksapps.com/incident/INC-20260924-E-0042
+
+SOC assessment Dashboard
+ https://e2-demo-field-eng.cloud.databricks.com/dashboardsv3/01f1cbc4481f13ceae49ee1eea244897/published

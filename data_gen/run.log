@@ -1,0 +1,15 @@
+/Users/praveen.gottam/Downloads/ai-dev-kit/security_context_mvp/.venv/lib/python3.12/site-packages/pyspark/sql/connect/client/core.py:140: UserWarning: Could not enable SetAllowOversizeProtos, please check the protobuf version.
+  warnings.warn("Could not enable SetAllowOversizeProtos, please check the protobuf version.")
+writing Databricks-side feeds ...
+writing external feeds ...
+writing business context ...
+writing governed business tables ...
+DONE
+query_history 39777
+uc_audit 79554
+table_lineage 39743
+idp 23191
+endpoint 1872
+dlp 1228
+hr 400
+devices 411

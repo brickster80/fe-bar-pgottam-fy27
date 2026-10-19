@@ -1,0 +1,58 @@
+bundle:
+  name: febar-e2e-console
+
+variables:
+  sql_warehouse_id:
+    description: SQL Warehouse ID
+  genie_space_id:
+    description: Default Genie Space ID
+  genie_space_name:
+    description: Genie Space display name
+  postgres_branch:
+    description: Full Lakebase Postgres branch resource name. Obtain by running `databricks postgres list-branches {project-name}`, select the desired item from the output array and use its .name value. Requires the project resource name.
+  postgres_database:
+    description: Full Lakebase Postgres database resource name. Obtain by running `databricks postgres list-databases {branch-name}`, select the desired item from the output array and use its .name value. Requires the branch resource name.
+
+resources:
+  apps:
+    app:
+      name: "febar-e2e-console"
+      description: "Authorized access, unauthorized movement: fusion investigation console"
+      source_code_path: ./
+
+      # Start the app automatically on deploy.
+      lifecycle:
+        started: true
+      user_api_scopes:
+        - dashboards.genie
+        - sql
+
+      # The resources which this app has access to.
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.sql_warehouse_id}
+            permission: CAN_USE
+        - name: genie-space
+          genie_space:
+            name: ${var.genie_space_name}
+            space_id: ${var.genie_space_id}
+            permission: CAN_RUN
+        - name: postgres
+          postgres:
+            branch: ${var.postgres_branch}
+            database: ${var.postgres_database}
+            permission: CAN_CONNECT_AND_CREATE
+
+targets:
+  default:
+    default: true
+    workspace:
+      host: https://e2-demo-field-eng.cloud.databricks.com
+
+    variables:
+      sql_warehouse_id: 9d8a677b3c55b8a7
+      genie_space_id: 01f1cbe0c38c1d129f67a95d56d9ac69
+      genie_space_name: Authorized Access, Unauthorized Movement
+      postgres_branch: projects/febar-e2e/branches/production
+      postgres_database: projects/febar-e2e/branches/production/databases/databricks-postgres

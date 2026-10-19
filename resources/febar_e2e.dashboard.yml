@@ -1,0 +1,10 @@
+resources:
+  dashboards:
+    febar_e2e_dashboard:
+      display_name: "Authorized Access, Unauthorized Movement - Investigation"
+      file_path: ../src/dashboard/febar_e2e.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: ${var.schema}
+      # viewers query with their own credentials, so Unity Catalog governance applies per viewer
+      embed_credentials: false

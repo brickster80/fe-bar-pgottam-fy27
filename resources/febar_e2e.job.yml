@@ -1,0 +1,28 @@
+resources:
+  jobs:
+    febar_e2e_daily:
+      name: febar-e2e-access-movement-daily
+      description: "Authorized access, unauthorized movement: Lakeflow ingest+correlate -> ML anomaly -> rules+ML fusion + GenAI assessment -> Lakebase refresh"
+      schedule:
+        quartz_cron_expression: "0 30 6 * * ?"
+        timezone_id: UTC
+        pause_status: PAUSED
+      tasks:
+        - task_key: ingest_and_correlate
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.febar_e2e_pipeline.id}
+        - task_key: ml_anomaly_scoring
+          depends_on: [{task_key: ingest_and_correlate}]
+          notebook_task:
+            notebook_path: ../src/ml/01_train_score_anomaly.py
+            base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}"}
+        - task_key: fusion_and_genai_assessment
+          depends_on: [{task_key: ml_anomaly_scoring}]
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/ml/02_assessment.sql
+        - task_key: refresh_lakebase_serving
+          depends_on: [{task_key: fusion_and_genai_assessment}]
+          notebook_task:
+            notebook_path: ../src/serving/refresh_lakebase_sync.py

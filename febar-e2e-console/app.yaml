@@ -1,0 +1,14 @@
+command: ['npm', 'run', 'start']
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: DATABRICKS_GENIE_SPACE_ID
+    valueFrom: genie-space
+  - name: LAKEBASE_ENDPOINT
+    valueFrom: postgres
+  - name: E2E_DASHBOARD_ID
+    value: 01f1cbe1f41c13c3b4c1964e652762d9
+  - name: E2E_WORKSPACE_HOST
+    value: https://e2-demo-field-eng.cloud.databricks.com
+  - name: E2E_WORKSPACE_ID
+    value: "1444828305810485"

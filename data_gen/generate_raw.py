@@ -1,0 +1,406 @@
+"""
+"Authorized access, unauthorized movement" - synthetic raw data generator
+=========================================================================
+Fictional company: Halcyon Financial (halcyonfin.com). Lands RAW feeds in
+/Volumes/capmarkets_stg/febar_e2e/raw_landing/ for Lakeflow to ingest, and creates
+the physical stand-ins for the three governed financial assets.
+
+Databricks-side feeds (shaped like the system tables):
+  uc_audit/        system.access.audit       (getTable, generateTemporaryTableCredential, commandSubmit)
+  query_history/   system.query.history      (statement_id, executed_by, produced_rows, client_application ...)
+  table_lineage/   system.access.table_lineage (statement_id -> source_table_full_name)
+External feeds (proposed inputs):
+  idp/             Okta-style sign-ins (device, IP, factor, risk)
+  endpoint/        EDR file-creation events (device, process, file, sha256, size)
+  dlp/             Netskope-style DLP / proxy upload events (destination instance, account, sha256, bytes)
+Business context:
+  hr/ devices/ assets/ workflows/ exceptions/ calendar/
+
+Incident (all times America/New_York local, 2026-09-24):
+  21:40 Alex Morgan signs in from LOANER-NYC-07 (never associated with Alex)
+  21:43 first-ever access to finance_prod.treasury.vendor_bank_accounts
+  21:46 query returns 480,000 rows (normal daily volume ~8,000)
+  21:49 EDR: DBeaver.exe creates vendor_master_full.csv
+  21:53 DLP: matching file (same sha256) uploaded to a personal Dropbox account
+Decoys:
+  Priya Shah (Accounting) - 52,000-row vendor pull under exception EXC-4471, uploaded to corporate SharePoint
+  Daniel Okafor (Treasury) - new managed laptop (device refresh), normal activity
+  Kevin Brooks (Engineering) - personal Dropbox upload of photos, no sensitive data access
+
+Run:  TZ=UTC DATABRICKS_CONFIG_PROFILE=e2-demo-field-eng python generate_raw.py
+"""
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+from databricks.connect import DatabricksSession
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
+
+CATALOG, SCHEMA = "capmarkets_stg", "febar_e2e"
+FQ = f"{CATALOG}.{SCHEMA}"
+VOL = f"/Volumes/{CATALOG}/{SCHEMA}/raw_landing"
+DOMAIN = "halcyonfin.com"
+WAREHOUSE = "4b9b953939869799"          # fictional prod warehouse id in the logs
+WORKSPACE_ID = "7474650000000001"
+
+spark = DatabricksSession.builder.serverless(True).getOrCreate()
+
+START, END = date(2026, 7, 1), date(2026, 9, 30)
+N_USERS = 400
+
+# logical governed assets (what the fictional company calls them) -> physical stand-ins in this schema
+MONTHLY = "finance_prod.reporting.monthly_summary"
+VENDOR = "finance_prod.treasury.vendor_bank_accounts"
+FORECAST = "finance_prod.strategy.acquisition_forecast"
+CRM = "sales_prod.crm.opportunities"
+WEB = "analytics_prod.web.sessions"
+
+# ---------------------------------------------------------------------------
+# Business calendar
+# ---------------------------------------------------------------------------
+days = [START + timedelta(d) for d in range((END - START).days + 1)]
+bdays = [d for d in days if d.weekday() < 5]
+
+
+def is_close(d):
+    """Month-end close: last 3 and first 3 business days of each month."""
+    same_month = [b for b in bdays if b.month == d.month]
+    return d in same_month[:3] or d in same_month[-3:]
+
+
+calendar_rows = [(d.isoformat(), d.weekday() < 5, d.weekday() < 5 and is_close(d),
+                  "Month-end close" if d.weekday() < 5 and is_close(d) else ("Weekend" if d.weekday() >= 5 else "Business day"))
+                 for d in days]
+
+# ---------------------------------------------------------------------------
+# HR
+# ---------------------------------------------------------------------------
+FIRST = ["James", "Mary", "Robert", "Patricia", "John", "Jennifer", "Michael", "Linda", "David", "Elizabeth",
+         "William", "Barbara", "Richard", "Susan", "Joseph", "Jessica", "Thomas", "Sarah", "Chris", "Karen",
+         "Daniel", "Nancy", "Wei", "Fatima", "Diego", "Yuki", "Omar", "Anya", "Kofi", "Lena"]
+LAST = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez",
+        "Hernandez", "Lopez", "Wilson", "Anderson", "Taylor", "Moore", "Jackson", "Patel", "Nguyen", "Kim",
+        "Chen", "Okafor", "Ivanov", "Haddad", "Singh", "Rossi", "Dubois", "Sato", "Novak", "Reyes"]
+DEPTS = [("Finance", "Financial Analyst", 70), ("Accounting", "Accountant", 40), ("Treasury", "Treasury Analyst", 20),
+         ("Corporate Development", "Corp Dev Associate", 12), ("Engineering", "Software Engineer", 110),
+         ("Sales", "Account Executive", 80), ("IT", "IT Administrator", 28), ("HR", "HR Partner", 20), ("Legal", "Counsel", 20)]
+OFFICES = [("New York", "America/New_York", "203.0.113.10", 0.6), ("Chicago", "America/Chicago", "203.0.113.20", 0.2),
+           ("London", "Europe/London", "203.0.113.30", 0.2)]
+
+emp = []
+i = 0
+for dept, role, n in DEPTS:
+    for k in range(n):
+        office = OFFICES[0] if (i % 10) < 6 else (OFFICES[1] if (i % 10) < 8 else OFFICES[2])
+        first, last = FIRST[(i * 7) % 30], LAST[(i * 11 + 3) % 30]
+        emp.append([i, f"E-{i:04d}", f"{first} {last}", dept, role if k > 1 else f"Senior {role}", office[0], office[1], office[2]])
+        i += 1
+PERSONAS = {  # idx -> (name, dept, role, office)
+    42: ("Alex Morgan", "Finance", "Financial Analyst", OFFICES[0]),
+    95: ("Priya Shah", "Accounting", "Senior Accountant", OFFICES[0]),
+    118: ("Daniel Okafor", "Treasury", "Treasury Analyst", OFFICES[0]),
+    150: ("Kevin Brooks", "Engineering", "Software Engineer", OFFICES[1]),
+}
+for idx, (name, dept, role, office) in PERSONAS.items():
+    emp[idx][2], emp[idx][3], emp[idx][4], emp[idx][5], emp[idx][6], emp[idx][7] = name, dept, role, office[0], office[1], office[2]
+for e in emp:
+    e.append(e[2].lower().replace(" ", ".") + (f".{e[0]}" if e[0] not in PERSONAS else "") + f"@{DOMAIN}")
+    e.append(f"E-{(e[0] // 15) * 15:04d}")   # manager
+EMP_IDX = {e[0]: e for e in emp}
+ALEX = EMP_IDX[42]
+emp_schema = "user_idx long, employee_id string, full_name string, department string, role string, office string, timezone string, office_ip string, email string, manager_id string"
+emp_df = spark.createDataFrame([tuple(e) for e in emp], emp_schema)
+
+# ---------------------------------------------------------------------------
+# Devices (CMDB): one managed laptop per employee + loaner pool; Daniel gets a refresh
+# ---------------------------------------------------------------------------
+devices = [(f"DEV-{e[0]:04d}", f"HLF-LT-{e[0]:04d}", "laptop", True, e[1], "assigned", "2025-01-15") for e in emp]
+devices += [(f"DEV-L{k:02d}", f"LOANER-NYC-{k:02d}", "loaner_laptop", True, None, "pool", "2024-06-01") for k in range(1, 11)]
+devices.append(("DEV-0118B", "HLF-LT-0118B", "laptop", True, "E-0118", "assigned", "2026-09-21"))
+dev_schema = "device_id string, hostname string, device_type string, managed boolean, assigned_employee_id string, assignment_status string, assigned_since string"
+
+# ---------------------------------------------------------------------------
+# Baseline activity: one session per user per active business day
+# ---------------------------------------------------------------------------
+ud = spark.createDataFrame([(d.isoformat(), is_close(d)) for d in bdays], "day string, close boolean") \
+    .crossJoin(emp_df.select("user_idx", "employee_id", "email", "department", "timezone", "office_ip"))
+ud = ud.where(F.rand(1) < 0.88)  # PTO / not working
+ud = ud.withColumn("from_home", F.rand(2) < 0.35) \
+    .withColumn("src_ip", F.when(F.col("from_home"), F.concat(F.lit("98.113."), (F.col("user_idx") % 250 + 1).cast("string"), F.lit(".77")))
+                .otherwise(F.col("office_ip"))) \
+    .withColumn("device_id", F.when((F.col("user_idx") == 118) & (F.col("day") >= "2026-09-21"), F.lit("DEV-0118B"))
+                .otherwise(F.concat(F.lit("DEV-"), F.lpad(F.col("user_idx").cast("string"), 4, "0")))) \
+    .withColumn("start_hour", (F.rand(3) * 3 + 7.5)) \
+    .withColumn("session_id", F.concat(F.lit("S-"), F.col("employee_id"), F.lit("-"), F.regexp_replace("day", "-", ""))) \
+    .withColumn("signin_local", F.expr("to_timestamp(day) + make_interval(0,0,0,0, cast(start_hour as int), cast((start_hour - cast(start_hour as int))*60 as int), 0)")) \
+    .withColumn("signin_utc", F.to_utc_timestamp("signin_local", F.col("timezone")))
+# materialize once so every feed derived from it sees identical random draws
+ud.write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}._gen_user_days")
+ud = spark.table(f"{FQ}._gen_user_days")
+
+# IdP sign-ins
+idp = ud.select(
+    F.concat(F.lit("OKTA-"), F.col("session_id")).alias("uuid"), F.col("signin_utc").alias("published"),
+    F.col("email"), F.col("device_id"), F.col("src_ip"), F.col("session_id"),
+    F.when(F.col("from_home"), F.lit("home")).otherwise(F.lit("office")).alias("network"),
+    F.when(F.rand(4) < 0.7, "okta_verify_push").otherwise("fido2_webauthn").alias("factor"),
+    F.lit("SUCCESS").alias("outcome"), F.lit("LOW").alias("risk_level"), F.lit(True).alias("device_trusted"))
+
+# Queries: asset mix by department
+q = ud.withColumn("nq", F.when(F.col("department").isin("Finance", "Accounting", "Treasury", "Corporate Development"),
+                               (F.rand(5) * 3 + 2).cast("int")).otherwise((F.rand(5) * 3).cast("int")))
+q = q.withColumn("qi", F.explode(F.sequence(F.lit(1), F.greatest(F.col("nq"), F.lit(1))))).where(F.col("nq") > 0)
+r = F.rand(6)
+q = q.withColumn("asset",
+    F.when(F.col("department") == "Finance",
+           F.when((r < 0.012) & (F.col("user_idx") != 42), F.lit(VENDOR)).when(r < 0.85, F.lit(MONTHLY)).otherwise(F.lit(CRM)))
+     .when(F.col("department") == "Accounting", F.when(r < 0.10, F.lit(VENDOR)).when(r < 0.70, F.lit(MONTHLY)).otherwise(F.lit(CRM)))
+     .when(F.col("department") == "Treasury", F.when(r < 0.70, F.lit(VENDOR)).otherwise(F.lit(MONTHLY)))
+     .when(F.col("department") == "Corporate Development", F.when(r < 0.60, F.lit(FORECAST)).otherwise(F.lit(MONTHLY)))
+     .when(F.col("department") == "Sales", F.lit(CRM))
+     .otherwise(F.when(r < 0.003, F.lit(FORECAST)).otherwise(F.lit(WEB))))
+base_rows = F.when(F.col("asset") == MONTHLY, F.exp(F.randn(7) * 0.35) * 2600) \
+    .when(F.col("asset") == VENDOR, F.exp(F.randn(7) * 0.5) * 450) \
+    .when(F.col("asset") == FORECAST, F.exp(F.randn(7) * 0.4) * 140) \
+    .otherwise(F.exp(F.randn(7) * 0.8) * 9000)
+q = q.withColumn("produced_rows", (base_rows * F.when(F.col("close") & (F.col("asset") == MONTHLY), 2.5).otherwise(1.0)).cast("long"))
+q = q.withColumn("denied", (F.col("asset") == FORECAST) & ~F.col("department").isin("Corporate Development"))
+q = q.withColumn("produced_rows", F.when(F.col("denied"), F.lit(0)).otherwise(F.col("produced_rows")))
+q = q.withColumn("client_application",
+    F.when(F.col("department").isin("Engineering", "IT"), F.element_at(F.array(F.lit("Databricks SQL Editor"), F.lit("Databricks Notebook"), F.lit("DBeaver 24.1")), (F.rand(8) * 3).cast("int") + 1))
+     .otherwise(F.element_at(F.array(F.lit("Databricks SQL Editor"), F.lit("Power BI"), F.lit("Microsoft Excel (ODBC)")), (F.rand(8) * 3).cast("int") + 1)))
+q = q.withColumn("q_local", F.col("signin_local") + F.make_interval(F.lit(0), F.lit(0), F.lit(0), F.lit(0), (F.col("qi") * 1.7 + F.rand(9) * 1.5).cast("int"), (F.rand(10) * 59).cast("int"), (F.rand(11) * 59).cast("int"))) \
+    .withColumn("start_time", F.to_utc_timestamp("q_local", F.col("timezone"))) \
+    .withColumn("duration_ms", (F.col("produced_rows") * 0.4 + F.rand(12) * 3000 + 400).cast("long")) \
+    .withColumn("end_time", F.col("start_time") + F.make_interval(F.lit(0), F.lit(0), F.lit(0), F.lit(0), F.lit(0), F.lit(0), F.col("duration_ms") / 1000)) \
+    .withColumn("statement_id", F.expr("concat_ws('-', substr(md5(concat(session_id, qi)), 1, 8), substr(md5(concat(session_id, qi)), 9, 4), substr(md5(concat(session_id, qi)), 13, 4), substr(md5(concat(session_id, qi)), 17, 4), substr(md5(concat(session_id, qi)), 21, 12))")) \
+    .withColumn("row_bytes", F.when(F.col("asset") == VENDOR, 180).when(F.col("asset") == MONTHLY, 120).when(F.col("asset") == FORECAST, 300).otherwise(90))
+QCOLS = ["statement_id", "session_id", "email", "employee_id", "user_idx", "device_id", "src_ip", "asset", "produced_rows",
+         "denied", "client_application", "start_time", "end_time", "duration_ms", "row_bytes", "timezone", "department"]
+q = q.select(*QCOLS)
+q.write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}._gen_queries")
+q = spark.table(f"{FQ}._gen_queries")
+
+# Benign file exports from finance-family queries via Excel / Power BI, most saved to corporate SharePoint
+ex = q.where(F.col("department").isin("Finance", "Accounting", "Treasury") & F.col("client_application").isin("Microsoft Excel (ODBC)", "Power BI")
+             & ~F.col("denied") & (F.rand(13) < 0.12))
+ex = ex.withColumn("file_name", F.concat(F.regexp_replace(F.element_at(F.split("asset", "\\."), 3), "_", "-"), F.lit("_"),
+                                         F.date_format("start_time", "yyyyMMdd"), F.lit(".xlsx"))) \
+    .withColumn("process_name", F.when(F.col("client_application") == "Power BI", F.lit("PBIDesktop.exe")).otherwise(F.lit("EXCEL.EXE"))) \
+    .withColumn("size_bytes", (F.col("produced_rows") * F.col("row_bytes") * 0.6).cast("long")) \
+    .withColumn("file_time", F.col("end_time") + F.make_interval(F.lit(0), F.lit(0), F.lit(0), F.lit(0), F.lit(0), (F.rand(14) * 4 + 1).cast("int"), F.lit(0))) \
+    .withColumn("sha256", F.sha2(F.concat_ws("|", "statement_id", "file_name"), 256))
+endpoint_benign = ex.select(F.concat(F.lit("EDR-"), F.col("statement_id")).alias("event_id"), F.col("file_time").alias("timestamp"),
+                            "device_id", "email", "process_name",
+                            F.concat(F.lit("C:\\Users\\"), F.split("email", "@").getItem(0), F.lit("\\Documents\\"), F.col("file_name")).alias("file_path"),
+                            "file_name", "sha256", "size_bytes")
+dlp_benign = ex.where(F.rand(15) < 0.5).select(
+    F.concat(F.lit("DLP-"), F.col("statement_id")).alias("event_id"),
+    (F.col("file_time") + F.make_interval(F.lit(0), F.lit(0), F.lit(0), F.lit(0), F.lit(0), (F.rand(16) * 20 + 2).cast("int"), F.lit(0))).alias("timestamp"),
+    "email", "device_id", F.lit("Microsoft SharePoint").alias("app"), F.lit("corporate").alias("instance_type"),
+    F.lit("halcyonfin.sharepoint.com").alias("destination"), F.lit("tenant:halcyonfin").alias("destination_account"),
+    "file_name", "sha256", F.col("size_bytes").alias("bytes"), F.lit("Upload").alias("activity"),
+    F.lit("allow").alias("action"), F.lit("success").alias("outcome"), F.lit("Corporate collaboration").alias("policy"),
+    F.lit(None).cast("string").alias("dlp_profile"))
+# Background personal uploads with no sensitive content (DLP noise)
+dlp_noise = ud.where(F.rand(17) < 0.012).select(
+    F.concat(F.lit("DLP-N-"), F.col("session_id")).alias("event_id"),
+    (F.col("signin_utc") + F.make_interval(F.lit(0), F.lit(0), F.lit(0), F.lit(0), F.lit(4), F.lit(10), F.lit(0))).alias("timestamp"),
+    "email", "device_id", F.lit("Google Drive").alias("app"), F.lit("personal").alias("instance_type"),
+    F.lit("drive.google.com").alias("destination"), F.concat(F.lit("gdrive-personal:"), F.substring(F.sha2("email", 256), 1, 10)).alias("destination_account"),
+    F.lit("photos_weekend.zip").alias("file_name"), F.sha2("session_id", 256).alias("sha256"), (F.rand(18) * 30e6).cast("long").alias("bytes"),
+    F.lit("Upload").alias("activity"), F.lit("allow").alias("action"), F.lit("success").alias("outcome"),
+    F.lit("Personal cloud - monitor").alias("policy"), F.lit(None).cast("string").alias("dlp_profile"))
+
+# ---------------------------------------------------------------------------
+# Scripted personas
+# ---------------------------------------------------------------------------
+NY = ZoneInfo("America/New_York")
+UTC = ZoneInfo("UTC")
+
+
+def utc(local_str, tz=NY):
+    return datetime.fromisoformat(local_str).replace(tzinfo=tz).astimezone(UTC).replace(tzinfo=None)
+
+
+ALEX_EMAIL, ALEX_ID = ALEX[8], ALEX[1]
+LOANER, LOANER_IP = "DEV-L07", "73.45.201.18"
+ALEX_SESSION = "S-E-0042-20260924-N"
+SHA_ALEX = "9f2c6a1e4b7d0c3f8a5e2d1b6c9f0a3e7d4b1c8f5a2e9d6b3c0f7a4e1d8b5c2f"
+q_schema = q.schema
+
+scripted_q, scripted_idp, scripted_ep, scripted_dlp = [], [], [], []
+# 21:40 sign-in from loaner device never associated with Alex
+scripted_idp.append(("OKTA-" + ALEX_SESSION, utc("2026-09-24T21:40:12"), ALEX_EMAIL, LOANER, LOANER_IP, ALEX_SESSION,
+                     "home", "okta_verify_push", "SUCCESS", "MEDIUM", True))
+# 21:43 first-ever vendor banking access (schema probe), 21:46 bulk pull 480,000 rows
+scripted_q.append(("01f0a7c2-alex-0001-probe", ALEX_SESSION, ALEX_EMAIL, ALEX_ID, 42, LOANER, LOANER_IP, VENDOR, 25, False,
+                   "DBeaver 24.1", utc("2026-09-24T21:43:05"), utc("2026-09-24T21:43:06"), 900, 180, "America/New_York", "Finance"))
+scripted_q.append(("01f0a7c2-alex-0002-bulk", ALEX_SESSION, ALEX_EMAIL, ALEX_ID, 42, LOANER, LOANER_IP, VENDOR, 480000, False,
+                   "DBeaver 24.1", utc("2026-09-24T21:46:10"), utc("2026-09-24T21:47:52"), 102000, 180, "America/New_York", "Finance"))
+# 21:49 EDR: CSV materialized by the client process
+scripted_ep.append(("EDR-ALEX-0001", utc("2026-09-24T21:49:31"), LOANER, ALEX_EMAIL, "dbeaver.exe",
+                    "C:\\Users\\amorgan\\Downloads\\vendor_master_full.csv", "vendor_master_full.csv", SHA_ALEX, 86_400_000))
+# 21:53 DLP: upload of the same file to an unapproved personal Dropbox account
+scripted_dlp.append(("DLP-ALEX-0001", utc("2026-09-24T21:53:44"), ALEX_EMAIL, LOANER, "Dropbox", "personal", "www.dropbox.com",
+                     "dropbox-personal:dbid:AAD7Kx2mQ9", "vendor_master_full.csv", SHA_ALEX, 86_400_000, "Upload", "allow",
+                     "success", "Personal cloud - monitor", "Bank account numbers (ABA/IBAN)"))
+
+# Priya Shah decoy: large vendor pull under exception ticket, corporate destination, business hours
+PRIYA = EMP_IDX[95]
+SHA_PRIYA = "1b3d5f7a9c2e4f6a8b0d1c3e5f7a9b2d4c6e8f0a1b3d5f7a9c2e4f6a8b0d1c3e"
+PS = "S-E-0095-20260929-X"
+scripted_idp.append(("OKTA-" + PS, utc("2026-09-29T13:55:00"), PRIYA[8], "DEV-0095", "203.0.113.10", PS, "office", "fido2_webauthn", "SUCCESS", "LOW", True))
+scripted_q.append(("01f0b113-priya-0001-audit", PS, PRIYA[8], PRIYA[1], 95, "DEV-0095", "203.0.113.10", VENDOR, 52000, False,
+                   "Microsoft Excel (ODBC)", utc("2026-09-29T14:05:00"), utc("2026-09-29T14:05:31"), 31000, 180, "America/New_York", "Accounting"))
+scripted_ep.append(("EDR-PRIYA-0001", utc("2026-09-29T14:08:10"), "DEV-0095", PRIYA[8], "EXCEL.EXE",
+                    "C:\\Users\\pshah\\Documents\\vendor_master_audit_Q3.xlsx", "vendor_master_audit_Q3.xlsx", SHA_PRIYA, 5_600_000))
+scripted_dlp.append(("DLP-PRIYA-0001", utc("2026-09-29T14:15:02"), PRIYA[8], "DEV-0095", "Microsoft SharePoint", "corporate",
+                     "halcyonfin.sharepoint.com", "tenant:halcyonfin", "vendor_master_audit_Q3.xlsx", SHA_PRIYA, 5_600_000,
+                     "Upload", "allow", "success", "Corporate collaboration", "Bank account numbers (ABA/IBAN)"))
+# Kevin Brooks decoy: personal Dropbox upload, nothing sensitive accessed
+KEV = EMP_IDX[150]
+scripted_dlp.append(("DLP-KEVIN-0001", utc("2026-09-23T19:12:00", ZoneInfo("America/Chicago")), KEV[8], "DEV-0150", "Dropbox", "personal",
+                     "www.dropbox.com", "dropbox-personal:dbid:KQ81zz", "family_videos.mp4", "c" * 64, 410_000_000,
+                     "Upload", "allow", "success", "Personal cloud - monitor", None))
+
+q_all = q.unionByName(spark.createDataFrame(scripted_q, q_schema))
+idp_all = idp.unionByName(spark.createDataFrame(scripted_idp, idp.schema))
+ep_all = endpoint_benign.unionByName(spark.createDataFrame(scripted_ep, endpoint_benign.schema))
+dlp_all = dlp_benign.unionByName(dlp_noise).unionByName(spark.createDataFrame(scripted_dlp, dlp_benign.schema))
+
+# ---------------------------------------------------------------------------
+# Shape the Databricks-side feeds like the system tables
+# ---------------------------------------------------------------------------
+qh = q_all.select(
+    F.lit(WORKSPACE_ID).alias("workspace_id"), "statement_id", "session_id",
+    F.when(F.col("denied"), "FAILED").otherwise("FINISHED").alias("execution_status"),
+    F.struct(F.lit("WAREHOUSE").alias("type"), F.lit(WAREHOUSE).alias("warehouse_id")).alias("compute"),
+    F.col("email").alias("executed_by"),
+    F.concat(F.lit("SELECT * FROM "), F.col("asset"),
+             F.when(F.col("produced_rows") > 100000, F.lit("")).otherwise(F.lit(" WHERE period >= add_months(current_date(), -1)"))).alias("statement_text"),
+    F.lit("SELECT").alias("statement_type"),
+    F.when(F.col("denied"), F.lit("[INSUFFICIENT_PERMISSIONS] User does not have SELECT on Table")).alias("error_message"),
+    "client_application", F.col("duration_ms").alias("total_duration_ms"),
+    F.date_format("start_time", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").alias("start_time"),
+    F.date_format("end_time", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").alias("end_time"),
+    F.col("produced_rows").alias("read_rows"), "produced_rows",
+    (F.col("produced_rows") * F.col("row_bytes")).alias("read_bytes"))
+
+lin = q_all.where(~F.col("denied")).select(
+    F.lit(WORKSPACE_ID).alias("workspace_id"), F.lit("DBSQL_QUERY").alias("entity_type"),
+    F.col("statement_id"), F.col("asset").alias("source_table_full_name"), F.lit("TABLE").alias("source_type"),
+    F.lit(None).cast("string").alias("target_table_full_name"), F.lit(None).cast("string").alias("target_type"),
+    F.col("email").alias("created_by"), F.date_format("start_time", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").alias("event_time"))
+
+aud_base = q_all.select("statement_id", "email", "src_ip", "asset", "denied", "client_application", "start_time")
+ua = F.when(F.col("client_application").startswith("DBeaver"), F.lit("DBeaver/24.1 Databricks-JDBC/2.6.40")) \
+    .when(F.col("client_application") == "Power BI", F.lit("PowerBI/2.140 Simba-ODBC")) \
+    .when(F.col("client_application").startswith("Microsoft Excel"), F.lit("Excel/16.0 Simba-ODBC")) \
+    .otherwise(F.lit("Mozilla/5.0 Databricks-SQL-Editor"))
+
+
+def audit(df, service, action, params):
+    return df.select(
+        F.date_format("start_time", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").alias("event_time"),
+        F.to_date("start_time").cast("string").alias("event_date"), F.lit(WORKSPACE_ID).alias("workspace_id"),
+        F.lit(service).alias("service_name"), F.lit(action).alias("action_name"),
+        F.concat(F.lit(action[:3].upper() + "-"), F.col("statement_id")).alias("request_id"),
+        F.struct(F.col("email").alias("email")).alias("user_identity"),
+        params.alias("request_params"),
+        F.struct(F.when(F.col("denied") & (F.lit(service) == "unityCatalog"), 403).otherwise(200).alias("status_code"),
+                 F.when(F.col("denied") & (F.lit(service) == "unityCatalog"), F.lit("PERMISSION_DENIED")).alias("error_message")).alias("response"),
+        F.col("src_ip").alias("source_ip_address"), ua.alias("user_agent"))
+
+
+aud = audit(aud_base, "unityCatalog", "getTable",
+            F.struct(F.col("asset").alias("full_name_arg"), F.lit(None).cast("string").alias("commandId"), F.lit(None).cast("string").alias("warehouseId"))) \
+    .unionByName(audit(aud_base, "databrickssql", "commandSubmit",
+                       F.struct(F.lit(None).cast("string").alias("full_name_arg"), F.col("statement_id").alias("commandId"), F.lit(WAREHOUSE).alias("warehouseId"))))
+
+# ---------------------------------------------------------------------------
+# Write raw feeds
+# ---------------------------------------------------------------------------
+def ts_str(df, col):
+    return df.withColumn(col, F.date_format(col, "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"))
+
+
+print("writing Databricks-side feeds ...")
+qh.repartition(8).write.mode("overwrite").json(f"{VOL}/query_history/")
+lin.repartition(4).write.mode("overwrite").json(f"{VOL}/table_lineage/")
+aud.repartition(8).write.mode("overwrite").json(f"{VOL}/uc_audit/")
+print("writing external feeds ...")
+ts_str(idp_all, "published").repartition(4).write.mode("overwrite").json(f"{VOL}/idp/")
+ts_str(ep_all, "timestamp").repartition(2).write.mode("overwrite").json(f"{VOL}/endpoint/")
+ts_str(dlp_all, "timestamp").repartition(2).write.mode("overwrite").json(f"{VOL}/dlp/")
+
+print("writing business context ...")
+emp_df.drop("user_idx", "office_ip").coalesce(1).write.mode("overwrite").option("header", True).csv(f"{VOL}/hr/")
+spark.createDataFrame(devices, dev_schema).coalesce(1).write.mode("overwrite").option("header", True).csv(f"{VOL}/devices/")
+assets = [
+    (MONTHLY, f"{FQ}.reporting_monthly_summary", "confidential", 2, "Aggregated financial results", "Routine analyst reporting", "SOX", "Finance;Accounting;Treasury;Corporate Development"),
+    (VENDOR, f"{FQ}.treasury_vendor_bank_accounts", "restricted", 3, "Vendor bank-account information", "Approved treasury workflows", "SOX;PCI-adjacent", "Treasury;Accounting;Finance"),
+    (FORECAST, f"{FQ}.strategy_acquisition_forecast", "highly_restricted", 4, "Confidential acquisition forecasts", "Restricted corporate-development analysis", "MNPI", "Corporate Development"),
+    (CRM, f"{FQ}.sales_crm_opportunities", "internal", 1, "Sales pipeline", "Sales operations", None, "Sales;Finance;Accounting"),
+    (WEB, f"{FQ}.analytics_web_sessions", "internal", 1, "Web analytics", "Product analytics", None, "Engineering;IT;HR;Legal;Sales"),
+]
+spark.createDataFrame(assets, "asset_full_name string, physical_table string, sensitivity string, sensitivity_rank int, content string, expected_use string, regulation string, granted_departments string") \
+    .coalesce(1).write.mode("overwrite").json(f"{VOL}/assets/")
+workflows = [
+    ("WF-01", "Monthly management reporting", MONTHLY, "Finance;Accounting;Treasury;Corporate Development", "Business hours, any business day"),
+    ("WF-02", "Vendor payment run", VENDOR, "Treasury", "Business hours; payment days Tue/Thu"),
+    ("WF-03", "Vendor master maintenance", VENDOR, "Accounting", "Business hours; requires exception ticket for bulk extracts"),
+    ("WF-04", "M&A modeling", FORECAST, "Corporate Development", "Business hours; deal-team only"),
+    ("WF-05", "Pipeline reporting", CRM, "Sales;Finance;Accounting", "Any"),
+    ("WF-06", "Product analytics", WEB, "Engineering;IT;HR;Legal;Sales", "Any"),
+]
+spark.createDataFrame(workflows, "workflow_id string, workflow_name string, asset_full_name string, approved_departments string, conditions string") \
+    .coalesce(1).write.mode("overwrite").json(f"{VOL}/workflows/")
+exceptions = [
+    ("EXC-4471", PRIYA[1], VENDOR, "Q3 vendor master audit - full extract approved by Controller", "2026-09-28", "2026-09-30", "approved", "Controller (E-0090)"),
+    ("EXC-4302", EMP_IDX[60][1], MONTHLY, "Board pack preparation", "2026-08-25", "2026-08-29", "approved", "VP Finance (E-0045)"),
+]
+spark.createDataFrame(exceptions, "ticket_id string, employee_id string, asset_full_name string, justification string, valid_from string, valid_to string, status string, approver string") \
+    .coalesce(1).write.mode("overwrite").json(f"{VOL}/exceptions/")
+spark.createDataFrame(calendar_rows, "cal_date string, is_business_day boolean, is_close_period boolean, period_label string") \
+    .coalesce(1).write.mode("overwrite").option("header", True).csv(f"{VOL}/calendar/")
+
+# ---------------------------------------------------------------------------
+# Physical stand-ins for the governed financial assets (real UC tables)
+# ---------------------------------------------------------------------------
+print("writing governed business tables ...")
+spark.range(0, 2400).select(
+    F.expr("date_format(add_months(date'2024-01-01', cast(id % 33 as int)), 'yyyy-MM')").alias("period"),
+    F.element_at(F.array(*[F.lit(x) for x in ["Wealth", "Capital Markets", "Retail Banking", "Insurance"]]), (F.col("id") % 4 + 1).cast("int")).alias("business_unit"),
+    F.element_at(F.array(*[F.lit(x) for x in ["Revenue", "Operating expense", "Net interest income", "Provision", "EBITDA"]]), (F.col("id") % 5 + 1).cast("int")).alias("line_item"),
+    F.round(F.rand(1) * 50_000_000, 2).alias("actual_usd"), F.round(F.rand(2) * 50_000_000, 2).alias("plan_usd"),
+).write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.reporting_monthly_summary")
+spark.range(0, 6000).select(
+    F.concat(F.lit("V-"), F.lpad(F.col("id").cast("string"), 6, "0")).alias("vendor_id"),
+    F.concat(F.element_at(F.array(*[F.lit(x) for x in ["Apex", "Blue Harbor", "Cobalt", "Delta Ridge", "Evergreen", "Falcon", "Granite"]]), (F.col("id") % 7 + 1).cast("int")),
+             F.lit(" "), F.element_at(F.array(*[F.lit(x) for x in ["Supplies", "Logistics", "Consulting", "Systems", "Partners"]]), (F.col("id") % 5 + 1).cast("int"))).alias("vendor_name"),
+    F.element_at(F.array(*[F.lit(x) for x in ["JPMorgan Chase", "Bank of America", "Wells Fargo", "Citibank", "HSBC"]]), (F.col("id") % 5 + 1).cast("int")).alias("bank_name"),
+    F.lpad((F.abs(F.hash("id", F.lit(1))) % 900000000 + 100000000).cast("string"), 9, "0").alias("routing_number"),
+    F.lpad((F.abs(F.hash("id", F.lit(2))) % 9000000000 + 1000000000).cast("string"), 10, "0").alias("account_number"),
+    F.element_at(F.array(F.lit("US"), F.lit("GB"), F.lit("DE")), (F.col("id") % 3 + 1).cast("int")).alias("country"),
+    F.round(F.rand(3) * 2_000_000, 2).alias("ytd_payments_usd"),
+).write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.treasury_vendor_bank_accounts")
+spark.range(0, 180).select(
+    F.concat(F.lit("PRJ-"), F.element_at(F.array(*[F.lit(x) for x in ["ORION", "VEGA", "LYRA", "ATLAS", "NOVA", "HELIX"]]), (F.col("id") % 6 + 1).cast("int"))).alias("project_code"),
+    F.element_at(F.array(*[F.lit(x) for x in ["Target A (fintech)", "Target B (asset mgr)", "Target C (insurer)", "Target D (payments)", "Target E (wealth)", "Target F (data)"]]), (F.col("id") % 6 + 1).cast("int")).alias("target"),
+    F.expr("date_format(add_months(date'2026-10-01', cast(id % 30 as int)), 'yyyy-MM')").alias("forecast_period"),
+    F.round(F.rand(4) * 900, 1).alias("revenue_musd"), F.round(F.rand(5) * 250, 1).alias("ebitda_musd"),
+    F.round(F.rand(6) * 4000 + 500, 0).alias("valuation_musd"), F.element_at(F.array(F.lit("Screening"), F.lit("Diligence"), F.lit("LOI")), (F.col("id") % 3 + 1).cast("int")).alias("stage"),
+).write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.strategy_acquisition_forecast")
+spark.range(0, 3000).select(F.concat(F.lit("OPP-"), F.col("id").cast("string")).alias("opportunity_id"),
+    F.round(F.rand(7) * 2e6, 0).alias("amount_usd"), F.element_at(F.array(F.lit("Prospect"), F.lit("Proposal"), F.lit("Won")), (F.col("id") % 3 + 1).cast("int")).alias("stage")) \
+    .write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.sales_crm_opportunities")
+spark.range(0, 5000).select(F.concat(F.lit("WS-"), F.col("id").cast("string")).alias("session_id"),
+    F.expr("date_add(date'2026-07-01', cast(id % 90 as int))").alias("session_date"), (F.rand(8) * 600).cast("int").alias("duration_s")) \
+    .write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.analytics_web_sessions")
+
+for t in ["_gen_user_days", "_gen_queries"]:
+    spark.sql(f"DROP TABLE IF EXISTS {FQ}.{t}")
+print("DONE")
+for sub, fmt in [("query_history", "json"), ("uc_audit", "json"), ("table_lineage", "json"), ("idp", "json"), ("endpoint", "json"), ("dlp", "json"), ("hr", "csv"), ("devices", "csv")]:
+    print(sub, spark.read.format(fmt).option("header", True).load(f"{VOL}/{sub}/").count())

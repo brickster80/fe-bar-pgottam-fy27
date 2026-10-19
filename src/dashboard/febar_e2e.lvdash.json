@@ -1,0 +1,2507 @@
+{
+ "datasets": [
+  {
+   "name": "ds_access",
+   "displayName": "Q1 Sensitive access (statement level)",
+   "queryLines": [
+    "SELECT statement_id, access_date, department, full_name, role,\n",
+    "       replace(replace(asset_full_name, 'finance_prod.', ''), 'sales_prod.', '') AS asset, sensitivity, sensitivity_rank,\n",
+    "       produced_rows, client_application, is_off_hours,\n",
+    "       CASE WHEN device_assigned_to_user THEN 'Assigned device' ELSE 'Unassigned device' END AS device_context,\n",
+    "       CASE WHEN exception_ticket IS NOT NULL THEN 'Exception ticket' WHEN has_approved_workflow THEN 'Approved workflow' ELSE 'Outside workflow' END AS workflow_context\n",
+    "FROM silver_sensitive_access\n",
+    "WHERE sensitivity_rank >= 2 AND execution_status = 'FINISHED'\n"
+   ],
+   "columns": [
+    {
+     "displayName": "Sensitive Queries",
+     "expression": "COUNT(`statement_id`)"
+    },
+    {
+     "displayName": "Employees On Restricted Assets",
+     "expression": "COUNT(DISTINCT CASE WHEN `sensitivity_rank` >= 3 THEN `full_name` END)"
+    },
+    {
+     "displayName": "Off-hours Sensitive Queries",
+     "expression": "SUM(CASE WHEN `is_off_hours` THEN 1 ELSE 0 END)"
+    },
+    {
+     "displayName": "Unassigned Device Queries",
+     "expression": "SUM(CASE WHEN `device_context` = 'Unassigned device' THEN 1 ELSE 0 END)"
+    }
+   ]
+  },
+  {
+   "name": "ds_anomalies",
+   "displayName": "Q2 Access vs self and peers",
+   "queryLines": [
+    "SELECT anomaly_id, access_date, department, full_name, role,\n",
+    "       replace(asset_full_name, 'finance_prod.', '') AS asset, sensitivity, rows_returned, user_median_daily_rows,\n",
+    "       peer_median_daily_rows, ratio_vs_self, ratio_vs_peers, is_first_access_to_asset, unassigned_device,\n",
+    "       CASE WHEN ratio_vs_self >= 10 OR ratio_vs_peers >= 20 THEN 'Unusual' ELSE 'Within baseline' END AS volume_verdict\n",
+    "FROM gold_access_anomalies\n",
+    "WHERE sensitivity_rank >= 2\n"
+   ],
+   "columns": [
+    {
+     "displayName": "Unusual Employee-Asset-Days",
+     "expression": "SUM(CASE WHEN `volume_verdict` = 'Unusual' THEN 1 ELSE 0 END)"
+    },
+    {
+     "displayName": "First Access To Restricted",
+     "expression": "SUM(CASE WHEN `is_first_access_to_asset` AND `sensitivity` <> 'confidential' THEN 1 ELSE 0 END)"
+    },
+    {
+     "displayName": "Max Ratio vs Self",
+     "expression": "MAX(`ratio_vs_self`)"
+    }
+   ]
+  },
+  {
+   "name": "ds_ml",
+   "displayName": "Q2 ML anomaly (employee-day)",
+   "queryLines": [
+    "SELECT feature_id, activity_date AS access_date, department, full_name, role, anomaly_score, is_anomaly,\n",
+    "       round(anomaly_score * 100, 1) AS anomaly_100, array_join(top_drivers, ' | ') AS drivers,\n",
+    "       CASE WHEN is_anomaly THEN 'Anomalous' ELSE 'Normal' END AS ml_label\n",
+    "FROM gold_user_day_anomaly\n"
+   ],
+   "columns": [
+    {
+     "displayName": "Anomalous Employee-Days",
+     "expression": "SUM(CASE WHEN `is_anomaly` THEN 1 ELSE 0 END)"
+    }
+   ]
+  },
+  {
+   "name": "ds_chains",
+   "displayName": "Q3 Access -> file -> destination chains",
+   "queryLines": [
+    "SELECT chain_id, access_date, department, full_name, role, replace(asset_full_name, 'finance_prod.', '') AS asset,\n",
+    "       produced_rows, client_application, device_hostname, file_name, round(size_bytes / 1e6, 1) AS file_mb,\n",
+    "       coalesce(upload_app, 'No upload') AS upload_app, coalesce(instance_type, 'none') AS instance_type,\n",
+    "       coalesce(destination_account, '') AS destination_account, chain_stage,\n",
+    "       CASE chain_stage WHEN 'uploaded_unauthorized' THEN 'Unauthorized destination'\n",
+    "                        WHEN 'uploaded_approved' THEN 'Approved corporate tenant' ELSE 'Local file only' END AS movement\n",
+    "FROM gold_exfil_chains\n"
+   ],
+   "columns": [
+    {
+     "displayName": "Files Materialized",
+     "expression": "COUNT(`chain_id`)"
+    },
+    {
+     "displayName": "Unauthorized Movements",
+     "expression": "SUM(CASE WHEN `chain_stage` = 'uploaded_unauthorized' THEN 1 ELSE 0 END)"
+    },
+    {
+     "displayName": "Approved Movements",
+     "expression": "SUM(CASE WHEN `chain_stage` = 'uploaded_approved' THEN 1 ELSE 0 END)"
+    }
+   ]
+  },
+  {
+   "name": "ds_incidents",
+   "displayName": "Q4 Incidents and assessments",
+   "queryLines": [
+    "SELECT r.incident_id, r.incident_date AS access_date, r.department, r.full_name, r.role, r.priority, r.fused_risk,\n",
+    "       r.rules_risk_score, round(coalesce(r.anomaly_score, 0) * 100, 1) AS ml_anomaly_100, r.chain_stage,\n",
+    "       replace(r.primary_asset, 'finance_prod.', '') AS asset, r.produced_rows, r.exception_ticket,\n",
+    "       array_join(r.attack_techniques, ', ') AS attack_techniques,\n",
+    "       array_join(r.compromise_indicators, '; ') AS compromise_indicators,\n",
+    "       array_join(r.misuse_indicators, '; ') AS misuse_indicators,\n",
+    "       array_join(r.mitigating_factors, '; ') AS mitigating_factors,\n",
+    "       coalesce(a.leading_hypothesis, '') AS leading_hypothesis\n",
+    "FROM gold_incident_risk r LEFT JOIN gold_incident_assessments a USING (incident_id)\n"
+   ],
+   "columns": [
+    {
+     "displayName": "P1 Incidents",
+     "expression": "SUM(CASE WHEN `priority` = 'P1' THEN 1 ELSE 0 END)"
+    },
+    {
+     "displayName": "Candidate Incidents",
+     "expression": "COUNT(`incident_id`)"
+    },
+    {
+     "displayName": "Explained By Exception",
+     "expression": "SUM(CASE WHEN `exception_ticket` IS NOT NULL THEN 1 ELSE 0 END)"
+    }
+   ]
+  },
+  {
+   "name": "ds_timeline",
+   "displayName": "Q4 Evidence timeline",
+   "queryLines": [
+    "SELECT t.incident_id, concat(t.incident_id, '-', t.step) AS evidence_key, t.step, t.local_hhmm, t.source, t.observation,\n",
+    "       t.why_it_matters, t.evidence_ref, r.full_name, r.department, r.incident_date AS access_date, r.priority\n",
+    "FROM gold_incident_timeline t JOIN gold_incident_risk r USING (incident_id)\n"
+   ]
+  }
+ ],
+ "pages": [
+  {
+   "name": "q1_who",
+   "displayName": "Q1 Who accessed",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "q1-title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "# Q1 - Who accessed sensitive financial data?\n",
+        "Databricks **audit** (identity, source IP), **query history** (statement, rows, client) and **table lineage** (statement -> governed table), joined to HR and the identity provider. Governed assets: `reporting.monthly_summary` (confidential), `treasury.vendor_bank_accounts` (restricted), `strategy.acquisition_forecast` (highly restricted). *Synthetic data; Halcyon Financial is fictional.*"
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q1-q",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "measure(Sensitive Queries)",
+           "expression": "MEASURE(`Sensitive Queries`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Sensitive Queries)",
+         "displayName": "Queries on sensitive financial assets",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "Queries on sensitive financial assets",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q1-e",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "measure(Employees On Restricted Assets)",
+           "expression": "MEASURE(`Employees On Restricted Assets`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Employees On Restricted Assets)",
+         "displayName": "Employees on restricted assets",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "Employees on restricted assets",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 3,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q1-o",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "measure(Off-hours Sensitive Queries)",
+           "expression": "MEASURE(`Off-hours Sensitive Queries`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Off-hours Sensitive Queries)",
+         "displayName": "Off-hours sensitive queries",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "Off-hours sensitive queries",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q1-d",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "measure(Unassigned Device Queries)",
+           "expression": "MEASURE(`Unassigned Device Queries`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Unassigned Device Queries)",
+         "displayName": "Queries from an unassigned device",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "Queries from an unassigned device",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 9,
+      "y": 2,
+      "width": 3,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "q1-asset-wf",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "asset",
+           "expression": "`asset`"
+          },
+          {
+           "name": "count(statement_id)",
+           "expression": "COUNT(`statement_id`)"
+          },
+          {
+           "name": "workflow_context",
+           "expression": "`workflow_context`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "count(statement_id)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Queries"
+        },
+        "y": {
+         "fieldName": "asset",
+         "scale": {
+          "type": "categorical",
+          "sort": {
+           "by": "x-reversed"
+          }
+         },
+         "displayName": "Governed asset"
+        },
+        "color": {
+         "fieldName": "workflow_context",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Outside workflow",
+            "color": "#FF5F66"
+           },
+           {
+            "value": "Exception ticket",
+            "color": "#FFA600"
+           },
+           {
+            "value": "Approved workflow",
+            "color": "#21918C"
+           }
+          ]
+         },
+         "displayName": "Workflow context"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Most sensitive reads happen inside an approved workflow"
+       },
+       "mark": {
+        "layout": "stack"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 5,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "q1-dept",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "department",
+           "expression": "`department`"
+          },
+          {
+           "name": "sum(produced_rows)",
+           "expression": "SUM(`produced_rows`)"
+          },
+          {
+           "name": "asset",
+           "expression": "`asset`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "sum(produced_rows)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Rows returned"
+        },
+        "y": {
+         "fieldName": "department",
+         "scale": {
+          "type": "categorical",
+          "sort": {
+           "by": "x-reversed"
+          }
+         },
+         "displayName": "Department"
+        },
+        "color": {
+         "fieldName": "asset",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Governed asset"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Rows returned by department and asset"
+       },
+       "mark": {
+        "layout": "stack"
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 5,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "q1-daily",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          },
+          {
+           "name": "sum(produced_rows)",
+           "expression": "SUM(`produced_rows`)"
+          },
+          {
+           "name": "asset",
+           "expression": "`asset`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "access_date",
+         "scale": {
+          "type": "temporal"
+         },
+         "displayName": "Date"
+        },
+        "y": {
+         "fieldName": "sum(produced_rows)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Rows returned"
+        },
+        "color": {
+         "fieldName": "asset",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Governed asset"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Daily rows returned from governed assets - one night stands out"
+       },
+       "mark": {
+        "layout": "stack"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 11,
+      "width": 12,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "q1-detail",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          },
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          },
+          {
+           "name": "role",
+           "expression": "`role`"
+          },
+          {
+           "name": "department",
+           "expression": "`department`"
+          },
+          {
+           "name": "asset",
+           "expression": "`asset`"
+          },
+          {
+           "name": "sensitivity",
+           "expression": "`sensitivity`"
+          },
+          {
+           "name": "produced_rows",
+           "expression": "`produced_rows`"
+          },
+          {
+           "name": "client_application",
+           "expression": "`client_application`"
+          },
+          {
+           "name": "device_context",
+           "expression": "`device_context`"
+          },
+          {
+           "name": "workflow_context",
+           "expression": "`workflow_context`"
+          },
+          {
+           "name": "is_off_hours",
+           "expression": "`is_off_hours`"
+          }
+         ],
+         "disaggregated": true,
+         "orders": [
+          {
+           "direction": "DESC",
+           "expression": "`produced_rows`"
+          }
+         ]
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "access_date",
+          "displayName": "Date"
+         },
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee"
+         },
+         {
+          "fieldName": "role",
+          "displayName": "Role"
+         },
+         {
+          "fieldName": "department",
+          "displayName": "Dept"
+         },
+         {
+          "fieldName": "asset",
+          "displayName": "Asset"
+         },
+         {
+          "fieldName": "sensitivity",
+          "displayName": "Sensitivity"
+         },
+         {
+          "fieldName": "produced_rows",
+          "displayName": "Rows"
+         },
+         {
+          "fieldName": "client_application",
+          "displayName": "Client"
+         },
+         {
+          "fieldName": "device_context",
+          "displayName": "Device"
+         },
+         {
+          "fieldName": "workflow_context",
+          "displayName": "Workflow"
+         },
+         {
+          "fieldName": "is_off_hours",
+          "displayName": "Off-hours"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Statement-level access (largest first)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 17,
+      "width": 12,
+      "height": 7
+     }
+    }
+   ]
+  },
+  {
+   "name": "q2_unusual",
+   "displayName": "Q2 Unusual?",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "q2-title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "# Q2 - Was the access unusual for that employee and their peers?\n",
+        "Each employee-asset-day is compared with the employee's own median day and with department peers on the same asset; an Isolation Forest scores every employee-day across identity, data-access, endpoint and DLP features."
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q2-u",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_anomalies",
+         "fields": [
+          {
+           "name": "measure(Unusual Employee-Asset-Days)",
+           "expression": "MEASURE(`Unusual Employee-Asset-Days`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Unusual Employee-Asset-Days)",
+         "displayName": "Unusual vs self or peers",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "Unusual vs self or peers",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q2-f",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_anomalies",
+         "fields": [
+          {
+           "name": "measure(First Access To Restricted)",
+           "expression": "MEASURE(`First Access To Restricted`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(First Access To Restricted)",
+         "displayName": "First-ever access to a restricted asset",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "First-ever access to a restricted asset",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 4,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q2-m",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_ml",
+         "fields": [
+          {
+           "name": "measure(Anomalous Employee-Days)",
+           "expression": "MEASURE(`Anomalous Employee-Days`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Anomalous Employee-Days)",
+         "displayName": "ML-anomalous employee-days",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "ML-anomalous employee-days",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "q2-scatter",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_anomalies",
+         "fields": [
+          {
+           "name": "ratio_vs_self",
+           "expression": "`ratio_vs_self`"
+          },
+          {
+           "name": "ratio_vs_peers",
+           "expression": "`ratio_vs_peers`"
+          },
+          {
+           "name": "volume_verdict",
+           "expression": "`volume_verdict`"
+          },
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "scatter",
+       "frame": {
+        "showTitle": true,
+        "title": "One employee-day is far outside both baselines",
+        "showDescription": true,
+        "description": "x = rows vs employee median day, y = rows vs peer median for the asset"
+       },
+       "encodings": {
+        "x": {
+         "fieldName": "ratio_vs_self",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "x self baseline"
+        },
+        "y": {
+         "fieldName": "ratio_vs_peers",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "x peer baseline"
+        },
+        "color": {
+         "fieldName": "volume_verdict",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Unusual",
+            "color": "#FF5F66"
+           },
+           {
+            "value": "Within baseline",
+            "color": "#9AA5B1"
+           }
+          ]
+         },
+         "displayName": "Volume"
+        }
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 5,
+      "width": 6,
+      "height": 7
+     }
+    },
+    {
+     "widget": {
+      "name": "q2-ml",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_ml",
+         "fields": [
+          {
+           "name": "department",
+           "expression": "`department`"
+          },
+          {
+           "name": "count(feature_id)",
+           "expression": "COUNT(`feature_id`)"
+          },
+          {
+           "name": "ml_label",
+           "expression": "`ml_label`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "count(feature_id)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Employee-days"
+        },
+        "y": {
+         "fieldName": "department",
+         "scale": {
+          "type": "categorical",
+          "sort": {
+           "by": "x-reversed"
+          }
+         },
+         "displayName": "Department"
+        },
+        "color": {
+         "fieldName": "ml_label",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Anomalous",
+            "color": "#FF5F66"
+           },
+           {
+            "value": "Normal",
+            "color": "#9AA5B1"
+           }
+          ]
+         },
+         "displayName": "ML verdict"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "ML anomaly verdicts by department"
+       },
+       "mark": {
+        "layout": "stack"
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 5,
+      "width": 6,
+      "height": 7
+     }
+    },
+    {
+     "widget": {
+      "name": "q2-detail",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_anomalies",
+         "fields": [
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          },
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          },
+          {
+           "name": "department",
+           "expression": "`department`"
+          },
+          {
+           "name": "asset",
+           "expression": "`asset`"
+          },
+          {
+           "name": "rows_returned",
+           "expression": "`rows_returned`"
+          },
+          {
+           "name": "user_median_daily_rows",
+           "expression": "`user_median_daily_rows`"
+          },
+          {
+           "name": "ratio_vs_self",
+           "expression": "`ratio_vs_self`"
+          },
+          {
+           "name": "peer_median_daily_rows",
+           "expression": "`peer_median_daily_rows`"
+          },
+          {
+           "name": "ratio_vs_peers",
+           "expression": "`ratio_vs_peers`"
+          },
+          {
+           "name": "is_first_access_to_asset",
+           "expression": "`is_first_access_to_asset`"
+          },
+          {
+           "name": "unassigned_device",
+           "expression": "`unassigned_device`"
+          },
+          {
+           "name": "volume_verdict",
+           "expression": "`volume_verdict`"
+          }
+         ],
+         "disaggregated": true,
+         "orders": [
+          {
+           "direction": "DESC",
+           "expression": "`ratio_vs_peers`"
+          }
+         ]
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "access_date",
+          "displayName": "Date"
+         },
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee"
+         },
+         {
+          "fieldName": "department",
+          "displayName": "Dept"
+         },
+         {
+          "fieldName": "asset",
+          "displayName": "Asset"
+         },
+         {
+          "fieldName": "rows_returned",
+          "displayName": "Rows"
+         },
+         {
+          "fieldName": "user_median_daily_rows",
+          "displayName": "Employee median day"
+         },
+         {
+          "fieldName": "ratio_vs_self",
+          "displayName": "x self"
+         },
+         {
+          "fieldName": "peer_median_daily_rows",
+          "displayName": "Peer median"
+         },
+         {
+          "fieldName": "ratio_vs_peers",
+          "displayName": "x peers"
+         },
+         {
+          "fieldName": "is_first_access_to_asset",
+          "displayName": "First access"
+         },
+         {
+          "fieldName": "unassigned_device",
+          "displayName": "Unassigned device"
+         },
+         {
+          "fieldName": "volume_verdict",
+          "displayName": "Verdict"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Employee x asset x day vs baselines"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 12,
+      "width": 12,
+      "height": 7
+     }
+    }
+   ]
+  },
+  {
+   "name": "q3_moved",
+   "displayName": "Q3 Did it move?",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "q3-title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "# Q3 - Did the data move to an unauthorized destination?\n",
+        "A chain links a sensitive query to a file created on the **same device** by the **same client process** within 15 minutes (size consistent with the result set), and to a DLP-observed upload of the **same SHA-256**."
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q3-f",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_chains",
+         "fields": [
+          {
+           "name": "measure(Files Materialized)",
+           "expression": "MEASURE(`Files Materialized`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Files Materialized)",
+         "displayName": "Sensitive results saved to files",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "Sensitive results saved to files",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q3-a",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_chains",
+         "fields": [
+          {
+           "name": "measure(Approved Movements)",
+           "expression": "MEASURE(`Approved Movements`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Approved Movements)",
+         "displayName": "Moved to the corporate tenant",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "Moved to the corporate tenant",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 4,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q3-u",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_chains",
+         "fields": [
+          {
+           "name": "measure(Unauthorized Movements)",
+           "expression": "MEASURE(`Unauthorized Movements`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Unauthorized Movements)",
+         "displayName": "Moved to an unauthorized destination",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "Moved to an unauthorized destination",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "q3-move",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_chains",
+         "fields": [
+          {
+           "name": "asset",
+           "expression": "`asset`"
+          },
+          {
+           "name": "count(chain_id)",
+           "expression": "COUNT(`chain_id`)"
+          },
+          {
+           "name": "movement",
+           "expression": "`movement`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "count(chain_id)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Chains"
+        },
+        "y": {
+         "fieldName": "asset",
+         "scale": {
+          "type": "categorical",
+          "sort": {
+           "by": "x-reversed"
+          }
+         },
+         "displayName": "Governed asset"
+        },
+        "color": {
+         "fieldName": "movement",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Unauthorized destination",
+            "color": "#FF5F66"
+           },
+           {
+            "value": "Approved corporate tenant",
+            "color": "#21918C"
+           },
+           {
+            "value": "Local file only",
+            "color": "#9AA5B1"
+           }
+          ]
+         },
+         "displayName": "Movement"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Where sensitive files went"
+       },
+       "mark": {
+        "layout": "stack"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 5,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "q3-app",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_chains",
+         "fields": [
+          {
+           "name": "upload_app",
+           "expression": "`upload_app`"
+          },
+          {
+           "name": "count(chain_id)",
+           "expression": "COUNT(`chain_id`)"
+          },
+          {
+           "name": "movement",
+           "expression": "`movement`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "fieldName": "count(chain_id)",
+         "scale": {
+          "type": "quantitative"
+         },
+         "displayName": "Chains"
+        },
+        "y": {
+         "fieldName": "upload_app",
+         "scale": {
+          "type": "categorical",
+          "sort": {
+           "by": "x-reversed"
+          }
+         },
+         "displayName": "upload_app"
+        },
+        "color": {
+         "fieldName": "movement",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Unauthorized destination",
+            "color": "#FF5F66"
+           },
+           {
+            "value": "Approved corporate tenant",
+            "color": "#21918C"
+           },
+           {
+            "value": "Local file only",
+            "color": "#9AA5B1"
+           }
+          ]
+         },
+         "displayName": "Movement"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Destination apps"
+       },
+       "mark": {
+        "layout": "stack"
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 5,
+      "width": 6,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "q3-detail",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_chains",
+         "fields": [
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          },
+          {
+           "name": "movement",
+           "expression": "`movement`"
+          },
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          },
+          {
+           "name": "department",
+           "expression": "`department`"
+          },
+          {
+           "name": "asset",
+           "expression": "`asset`"
+          },
+          {
+           "name": "produced_rows",
+           "expression": "`produced_rows`"
+          },
+          {
+           "name": "client_application",
+           "expression": "`client_application`"
+          },
+          {
+           "name": "device_hostname",
+           "expression": "`device_hostname`"
+          },
+          {
+           "name": "file_name",
+           "expression": "`file_name`"
+          },
+          {
+           "name": "file_mb",
+           "expression": "`file_mb`"
+          },
+          {
+           "name": "upload_app",
+           "expression": "`upload_app`"
+          },
+          {
+           "name": "instance_type",
+           "expression": "`instance_type`"
+          },
+          {
+           "name": "destination_account",
+           "expression": "`destination_account`"
+          }
+         ],
+         "disaggregated": true,
+         "orders": [
+          {
+           "direction": "DESC",
+           "expression": "`chain_stage`"
+          },
+          {
+           "direction": "DESC",
+           "expression": "`produced_rows`"
+          }
+         ]
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "access_date",
+          "displayName": "Date"
+         },
+         {
+          "fieldName": "movement",
+          "displayName": "Movement"
+         },
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee"
+         },
+         {
+          "fieldName": "department",
+          "displayName": "Dept"
+         },
+         {
+          "fieldName": "asset",
+          "displayName": "Asset"
+         },
+         {
+          "fieldName": "produced_rows",
+          "displayName": "Rows"
+         },
+         {
+          "fieldName": "client_application",
+          "displayName": "Client"
+         },
+         {
+          "fieldName": "device_hostname",
+          "displayName": "Device"
+         },
+         {
+          "fieldName": "file_name",
+          "displayName": "File"
+         },
+         {
+          "fieldName": "file_mb",
+          "displayName": "MB"
+         },
+         {
+          "fieldName": "upload_app",
+          "displayName": "Destination"
+         },
+         {
+          "fieldName": "instance_type",
+          "displayName": "Instance"
+         },
+         {
+          "fieldName": "destination_account",
+          "displayName": "Account"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Access -> file -> destination chains"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 11,
+      "width": 12,
+      "height": 7
+     }
+    }
+   ]
+  },
+  {
+   "name": "q4_evidence",
+   "displayName": "Q4 Evidence",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "q4-title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "# Q4 - What evidence supports the threat assessment?\n",
+        "Correlation converts separate identity, data-access, file and upload alerts into one explainable incident. The assessment weighs two competing hypotheses - **insider misuse of legitimate access** vs **account or device compromise** - without assuming intent."
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q4-p1",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_incidents",
+         "fields": [
+          {
+           "name": "measure(P1 Incidents)",
+           "expression": "MEASURE(`P1 Incidents`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(P1 Incidents)",
+         "displayName": "P1 incidents",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "P1 incidents",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q4-c",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_incidents",
+         "fields": [
+          {
+           "name": "measure(Candidate Incidents)",
+           "expression": "MEASURE(`Candidate Incidents`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Candidate Incidents)",
+         "displayName": "Candidate incidents",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "Candidate incidents",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 4,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-q4-x",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_incidents",
+         "fields": [
+          {
+           "name": "measure(Explained By Exception)",
+           "expression": "MEASURE(`Explained By Exception`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "measure(Explained By Exception)",
+         "displayName": "Explained by an exception ticket",
+         "format": {
+          "type": "number-plain",
+          "abbreviation": "compact"
+         }
+        }
+       },
+       "frame": {
+        "title": "Explained by an exception ticket",
+        "showTitle": true
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 2,
+      "width": 4,
+      "height": 3
+     }
+    },
+    {
+     "widget": {
+      "name": "q4-incidents",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_incidents",
+         "fields": [
+          {
+           "name": "priority",
+           "expression": "`priority`"
+          },
+          {
+           "name": "fused_risk",
+           "expression": "`fused_risk`"
+          },
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          },
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          },
+          {
+           "name": "department",
+           "expression": "`department`"
+          },
+          {
+           "name": "asset",
+           "expression": "`asset`"
+          },
+          {
+           "name": "chain_stage",
+           "expression": "`chain_stage`"
+          },
+          {
+           "name": "leading_hypothesis",
+           "expression": "`leading_hypothesis`"
+          },
+          {
+           "name": "attack_techniques",
+           "expression": "`attack_techniques`"
+          },
+          {
+           "name": "compromise_indicators",
+           "expression": "`compromise_indicators`"
+          },
+          {
+           "name": "misuse_indicators",
+           "expression": "`misuse_indicators`"
+          },
+          {
+           "name": "mitigating_factors",
+           "expression": "`mitigating_factors`"
+          }
+         ],
+         "disaggregated": true,
+         "orders": [
+          {
+           "direction": "DESC",
+           "expression": "`fused_risk`"
+          }
+         ]
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "priority",
+          "displayName": "Priority"
+         },
+         {
+          "fieldName": "fused_risk",
+          "displayName": "Fused risk",
+          "style": {
+           "type": "basic",
+           "rules": [
+            {
+             "condition": {
+              "operand": {
+               "type": "data-value",
+               "value": "80"
+              },
+              "operator": ">="
+             },
+             "backgroundColor": {
+              "hex": "#FF5F66"
+             }
+            },
+            {
+             "condition": {
+              "operand": {
+               "type": "data-value",
+               "value": "60"
+              },
+              "operator": ">="
+             },
+             "backgroundColor": {
+              "hex": "#FFA600"
+             }
+            }
+           ]
+          }
+         },
+         {
+          "fieldName": "access_date",
+          "displayName": "Date"
+         },
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee"
+         },
+         {
+          "fieldName": "department",
+          "displayName": "Dept"
+         },
+         {
+          "fieldName": "asset",
+          "displayName": "Asset"
+         },
+         {
+          "fieldName": "chain_stage",
+          "displayName": "Chain"
+         },
+         {
+          "fieldName": "leading_hypothesis",
+          "displayName": "Leading hypothesis (GenAI)"
+         },
+         {
+          "fieldName": "attack_techniques",
+          "displayName": "ATT&CK"
+         },
+         {
+          "fieldName": "compromise_indicators",
+          "displayName": "Compromise indicators"
+         },
+         {
+          "fieldName": "misuse_indicators",
+          "displayName": "Misuse indicators"
+         },
+         {
+          "fieldName": "mitigating_factors",
+          "displayName": "Mitigating"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Incidents ranked by fused risk (rules 60% + ML 40%)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 5,
+      "width": 12,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "q4-timeline",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_timeline",
+         "fields": [
+          {
+           "name": "priority",
+           "expression": "`priority`"
+          },
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          },
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          },
+          {
+           "name": "local_hhmm",
+           "expression": "`local_hhmm`"
+          },
+          {
+           "name": "source",
+           "expression": "`source`"
+          },
+          {
+           "name": "observation",
+           "expression": "`observation`"
+          },
+          {
+           "name": "why_it_matters",
+           "expression": "`why_it_matters`"
+          },
+          {
+           "name": "evidence_ref",
+           "expression": "`evidence_ref`"
+          }
+         ],
+         "disaggregated": true,
+         "orders": [
+          {
+           "direction": "ASC",
+           "expression": "`priority`"
+          },
+          {
+           "direction": "ASC",
+           "expression": "`incident_id`"
+          },
+          {
+           "direction": "ASC",
+           "expression": "`step`"
+          }
+         ]
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "priority",
+          "displayName": "Priority"
+         },
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee"
+         },
+         {
+          "fieldName": "access_date",
+          "displayName": "Date"
+         },
+         {
+          "fieldName": "local_hhmm",
+          "displayName": "Local"
+         },
+         {
+          "fieldName": "source",
+          "displayName": "Source"
+         },
+         {
+          "fieldName": "observation",
+          "displayName": "Observation"
+         },
+         {
+          "fieldName": "why_it_matters",
+          "displayName": "Why it matters"
+         },
+         {
+          "fieldName": "evidence_ref",
+          "displayName": "Evidence ref"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Evidence timeline (employee local time) - filter Employee = Alex Morgan"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 11,
+      "width": 12,
+      "height": 8
+     }
+    }
+   ]
+  },
+  {
+   "name": "filters",
+   "displayName": "Filters",
+   "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "f-date",
+      "queries": [
+       {
+        "name": "f-date_ds_access",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-date_ds_anomalies",
+        "query": {
+         "datasetName": "ds_anomalies",
+         "fields": [
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-date_ds_ml",
+        "query": {
+         "datasetName": "ds_ml",
+         "fields": [
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-date_ds_chains",
+        "query": {
+         "datasetName": "ds_chains",
+         "fields": [
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-date_ds_incidents",
+        "query": {
+         "datasetName": "ds_incidents",
+         "fields": [
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-date_ds_timeline",
+        "query": {
+         "datasetName": "ds_timeline",
+         "fields": [
+          {
+           "name": "access_date",
+           "expression": "`access_date`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "filter-date-range-picker",
+       "encodings": {
+        "fields": [
+         {
+          "fieldName": "access_date",
+          "displayName": "Date",
+          "queryName": "f-date_ds_access"
+         },
+         {
+          "fieldName": "access_date",
+          "displayName": "Date",
+          "queryName": "f-date_ds_anomalies"
+         },
+         {
+          "fieldName": "access_date",
+          "displayName": "Date",
+          "queryName": "f-date_ds_ml"
+         },
+         {
+          "fieldName": "access_date",
+          "displayName": "Date",
+          "queryName": "f-date_ds_chains"
+         },
+         {
+          "fieldName": "access_date",
+          "displayName": "Date",
+          "queryName": "f-date_ds_incidents"
+         },
+         {
+          "fieldName": "access_date",
+          "displayName": "Date",
+          "queryName": "f-date_ds_timeline"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Date"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 4,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "f-dept",
+      "queries": [
+       {
+        "name": "f-dept_ds_access",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "department",
+           "expression": "`department`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-dept_ds_anomalies",
+        "query": {
+         "datasetName": "ds_anomalies",
+         "fields": [
+          {
+           "name": "department",
+           "expression": "`department`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-dept_ds_ml",
+        "query": {
+         "datasetName": "ds_ml",
+         "fields": [
+          {
+           "name": "department",
+           "expression": "`department`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-dept_ds_chains",
+        "query": {
+         "datasetName": "ds_chains",
+         "fields": [
+          {
+           "name": "department",
+           "expression": "`department`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-dept_ds_incidents",
+        "query": {
+         "datasetName": "ds_incidents",
+         "fields": [
+          {
+           "name": "department",
+           "expression": "`department`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-dept_ds_timeline",
+        "query": {
+         "datasetName": "ds_timeline",
+         "fields": [
+          {
+           "name": "department",
+           "expression": "`department`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "filter-multi-select",
+       "encodings": {
+        "fields": [
+         {
+          "fieldName": "department",
+          "displayName": "Department",
+          "queryName": "f-dept_ds_access"
+         },
+         {
+          "fieldName": "department",
+          "displayName": "Department",
+          "queryName": "f-dept_ds_anomalies"
+         },
+         {
+          "fieldName": "department",
+          "displayName": "Department",
+          "queryName": "f-dept_ds_ml"
+         },
+         {
+          "fieldName": "department",
+          "displayName": "Department",
+          "queryName": "f-dept_ds_chains"
+         },
+         {
+          "fieldName": "department",
+          "displayName": "Department",
+          "queryName": "f-dept_ds_incidents"
+         },
+         {
+          "fieldName": "department",
+          "displayName": "Department",
+          "queryName": "f-dept_ds_timeline"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Department"
+       }
+      }
+     },
+     "position": {
+      "x": 4,
+      "y": 0,
+      "width": 4,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "f-emp",
+      "queries": [
+       {
+        "name": "f-emp_ds_access",
+        "query": {
+         "datasetName": "ds_access",
+         "fields": [
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-emp_ds_anomalies",
+        "query": {
+         "datasetName": "ds_anomalies",
+         "fields": [
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-emp_ds_ml",
+        "query": {
+         "datasetName": "ds_ml",
+         "fields": [
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-emp_ds_chains",
+        "query": {
+         "datasetName": "ds_chains",
+         "fields": [
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-emp_ds_incidents",
+        "query": {
+         "datasetName": "ds_incidents",
+         "fields": [
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "f-emp_ds_timeline",
+        "query": {
+         "datasetName": "ds_timeline",
+         "fields": [
+          {
+           "name": "full_name",
+           "expression": "`full_name`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "filter-multi-select",
+       "encodings": {
+        "fields": [
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee",
+          "queryName": "f-emp_ds_access"
+         },
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee",
+          "queryName": "f-emp_ds_anomalies"
+         },
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee",
+          "queryName": "f-emp_ds_ml"
+         },
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee",
+          "queryName": "f-emp_ds_chains"
+         },
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee",
+          "queryName": "f-emp_ds_incidents"
+         },
+         {
+          "fieldName": "full_name",
+          "displayName": "Employee",
+          "queryName": "f-emp_ds_timeline"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Employee"
+       }
+      }
+     },
+     "position": {
+      "x": 8,
+      "y": 0,
+      "width": 4,
+      "height": 2
+     }
+    }
+   ]
+  }
+ ],
+ "uiSettings": {
+  "theme": {
+   "canvasBackgroundColor": {
+    "light": "#FCFCFC",
+    "dark": "#1F272D"
+   },
+   "widgetBackgroundColor": {
+    "light": "#FFFFFF",
+    "dark": "#11171C"
+   },
+   "widgetBorderColor": {
+    "light": "#FFFFFF",
+    "dark": "#11171C"
+   },
+   "fontColor": {
+    "light": "#11171C",
+    "dark": "#E8ECF0"
+   },
+   "selectionColor": {
+    "light": "#2272B4",
+    "dark": "#8ACAFF"
+   },
+   "visualizationColors": [
+    "#0072B2",
+    "#E69F00",
+    "#009E73",
+    "#CC79A7",
+    "#D55E00",
+    "#56B4E9",
+    "#F0E442"
+   ],
+   "widgetHeaderAlignment": "LEFT"
+  },
+  "genieSpace": {
+   "isEnabled": true,
+   "overrideId": "01f1cbe0c38c1d129f67a95d56d9ac69",
+   "enablementMode": "ENABLED"
+  }
+ }
+}

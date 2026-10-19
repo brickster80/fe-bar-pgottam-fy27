@@ -1,0 +1,175 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {
+        "id": "10000000000000000000000000000001",
+        "question": [
+          "Who accessed sensitive financial data in the last two weeks of September?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000002",
+        "question": [
+          "Was Alex Morgan's access unusual for Alex and for Finance peers?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000003",
+        "question": [
+          "Did any sensitive data move to an unauthorized destination?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000004",
+        "question": [
+          "What evidence supports the threat assessment for Alex Morgan's incident?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000005",
+        "question": [
+          "Who accessed vendor bank accounts for the first time, and from which device?"
+        ]
+      },
+      {
+        "id": "10000000000000000000000000000006",
+        "question": [
+          "Which large extracts were explained by an approved exception ticket?"
+        ]
+      }
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {
+        "identifier": "capmarkets_stg.febar_e2e.gold_access_anomalies"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.gold_exfil_chains"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.gold_incident_assessments"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.gold_incident_risk"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.gold_incident_timeline"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.gold_user_day_anomaly"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.silver_asset_registry"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.silver_dlp_events"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.silver_employees"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.silver_exceptions"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.silver_identity_sessions"
+      },
+      {
+        "identifier": "capmarkets_stg.febar_e2e.silver_sensitive_access"
+      }
+    ]
+  },
+  "instructions": {
+    "example_question_sqls": [
+      {
+        "id": "20000000000000000000000000000001",
+        "question": [
+          "Who accessed sensitive financial data?"
+        ],
+        "sql": [
+          "SELECT full_name, department, role, asset_full_name, sensitivity, count(*) AS queries,\n",
+          "       sum(produced_rows) AS rows_returned, count_if(is_off_hours) AS off_hours_queries,\n",
+          "       count_if(NOT device_assigned_to_user) AS queries_from_unassigned_device\n",
+          "FROM capmarkets_stg.febar_e2e.silver_sensitive_access\n",
+          "WHERE sensitivity_rank >= 3 AND access_date >= DATE'2026-09-16'\n",
+          "GROUP BY ALL ORDER BY rows_returned DESC LIMIT 25\n"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000002",
+        "question": [
+          "Was the access unusual for the employee and their peers?"
+        ],
+        "sql": [
+          "SELECT full_name, department, asset_full_name, access_date, rows_returned, user_median_daily_rows, ratio_vs_self,\n",
+          "       peer_median_daily_rows, ratio_vs_peers, peers_using_asset, dept_headcount, is_first_access_to_asset,\n",
+          "       off_hours_statements, unassigned_device\n",
+          "FROM capmarkets_stg.febar_e2e.gold_access_anomalies\n",
+          "WHERE full_name = 'Alex Morgan' AND access_date = DATE'2026-09-24'\n"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000003",
+        "question": [
+          "Did data move to an unauthorized destination?"
+        ],
+        "sql": [
+          "SELECT full_name, department, asset_full_name, query_local, produced_rows, client_application, device_hostname,\n",
+          "       file_name, round(size_bytes / 1e6, 1) AS file_mb, upload_app, instance_type, destination_account, dlp_profile, upload_time\n",
+          "FROM capmarkets_stg.febar_e2e.gold_exfil_chains\n",
+          "WHERE chain_stage = 'uploaded_unauthorized'\n"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000004",
+        "question": [
+          "What evidence supports the threat assessment?"
+        ],
+        "sql": [
+          "SELECT t.local_hhmm, t.source, t.observation, t.why_it_matters, t.evidence_ref\n",
+          "FROM capmarkets_stg.febar_e2e.gold_incident_timeline t JOIN capmarkets_stg.febar_e2e.gold_incident_risk r USING (incident_id)\n",
+          "WHERE r.full_name = 'Alex Morgan' AND r.incident_date = DATE'2026-09-24'\n",
+          "ORDER BY t.step\n"
+        ]
+      },
+      {
+        "id": "20000000000000000000000000000005",
+        "question": [
+          "Which large extracts were explained by an exception ticket?"
+        ],
+        "sql": [
+          "SELECT r.full_name, r.department, r.primary_asset, r.produced_rows, r.exception_ticket, x.justification, x.approver,\n",
+          "       r.destination, r.priority\n",
+          "FROM capmarkets_stg.febar_e2e.gold_incident_risk r JOIN capmarkets_stg.febar_e2e.silver_exceptions x ON x.ticket_id = r.exception_ticket\n"
+        ]
+      }
+    ],
+    "text_instructions": [
+      {
+        "id": "30000000000000000000000000000001",
+        "content": [
+          "You are the investigation assistant for Halcyon Financial's \"Authorized access, unauthorized movement\" fusion use case.\n",
+          "You answer four questions: (1) who accessed sensitive financial data, (2) whether it was unusual for the employee and their department peers, (3) whether data moved to an unauthorized destination, (4) what evidence supports the threat assessment.\n",
+          "Data window: 2026-07-01 to 2026-09-30. \"Recent\", \"last two weeks\" or \"now\" means dates >= DATE'2026-09-16'. Do NOT use current_date().\n",
+          "Times: *_local and local_hhmm columns are the employee's local time; *_time / *_utc are UTC. Prefer local time in answers.\n",
+          "\n",
+          "GOVERNED ASSETS (asset_full_name): finance_prod.reporting.monthly_summary (confidential, routine reporting), finance_prod.treasury.vendor_bank_accounts (restricted, approved treasury workflows), finance_prod.strategy.acquisition_forecast (highly_restricted, corporate development only). \"Sensitive financial data\" = sensitivity_rank >= 2; \"restricted\" = sensitivity_rank >= 3.\n",
+          "\n",
+          "TABLE GUIDE\n",
+          "- Q1 who accessed: silver_sensitive_access (one row per statement: employee, asset, rows, client app, device, local time, workflow and exception context).\n",
+          "- Q2 unusual: gold_access_anomalies (employee x asset x day: ratio_vs_self, ratio_vs_peers, is_first_access_to_asset, peers_using_asset) and gold_user_day_anomaly (ML anomaly_score 0-1, top_drivers).\n",
+          "- Q3 moved: gold_exfil_chains (query -> file on same device by client process -> upload of same SHA-256). chain_stage: uploaded_unauthorized | uploaded_approved | materialized_only.\n",
+          "- Q4 evidence: gold_incident_timeline (ordered steps with source, observation, why_it_matters) and gold_incident_assessments (GenAI assessment + leading_hypothesis).\n",
+          "- gold_incident_risk: one row per candidate incident with rules_risk_score, anomaly_score, fused_risk, priority P1-P4, attack_techniques, compromise_indicators, misuse_indicators, mitigating_factors.\n",
+          "- silver_identity_sessions: IdP sign-ins with device assignment (device_assigned_to_user, is_new_device_for_user).\n",
+          "- silver_dlp_events: uploads; is_unapproved_destination = not the corporate tenant.\n",
+          "\n",
+          "RULES\n",
+          "- Never claim the employee is malicious. Present the two hypotheses (insider misuse vs account/device compromise) with their indicators.\n",
+          "- Always include full_name, department and role when listing employees. Format large numbers with thousands separators.\n"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+resources:
+  pipelines:
+    febar_e2e_pipeline:
+      name: febar-e2e-access-movement
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      channel: CURRENT
+      photon: true
+      continuous: false
+      root_path: ../src/pipeline
+      libraries:
+        - glob:
+            include: ../src/pipeline/transformations/**

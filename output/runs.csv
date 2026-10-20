@@ -1,0 +1,6 @@
+"Start Time","Duration","Run ID","Name","Source Type","Source Name","User","Status","contamination","n_estimators","n_features","flagged","rows"
+"2026-10-20 08:57:09","14.7s","d16e8e825cf3497e9476a2f3bf189bd3","access_movement_iforest","NOTEBOOK","/Users/praveen.gottam@databricks.com/.bundle/febar_e2e_demo/files/src/ml/01_train_score_anomaly","praveen.gottam@databricks.com","FINISHED","0.005","300","17","115","23189"
+"2026-10-20 08:40:32","12.0s","998b3448de97404a931d139ae2b0867d","access_movement_iforest","JOB","jobs/766987458520418/run/67069601232149","praveen.gottam@databricks.com","FINISHED","0.005","300","17","115","23189"
+"2026-10-20 08:29:39","16.4s","79fe7de9e01d46509cbf04debd10fc52","access_movement_iforest","JOB","jobs/766987458520418/run/169073313820153","praveen.gottam@databricks.com","FINISHED","0.005","300","17","115","23189"
+"2026-10-19 10:34:58","11.7s","a14dcae44c7d4d9d9f2c9b680d398dcd","access_movement_iforest","JOB","jobs/766987458520418/run/876508801417149","praveen.gottam@databricks.com","FINISHED","0.005","300","17","116","23189"
+"2026-10-19 10:09:16","12.6s","247f2cc0a3a246a0b6692809708a267a","access_movement_iforest","JOB","jobs/766987458520418/run/979821932675918","praveen.gottam@databricks.com","FINISHED","0.005","300","17","116","23189"

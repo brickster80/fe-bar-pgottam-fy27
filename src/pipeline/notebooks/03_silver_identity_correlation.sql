@@ -1,3 +1,44 @@
+-- Databricks notebook source
+-- MAGIC %md
+-- MAGIC # Silver - normalize identities and correlate access (Q1)
+-- MAGIC
+-- MAGIC **Q1 - Who accessed sensitive financial data?**
+-- MAGIC
+-- MAGIC The query has no device and the endpoint has no query. The audit `commandSubmit` source IP bridges the statement to the IdP session, and the session gives the device.
+-- MAGIC `silver_sensitive_access` = query history ⋈ lineage ⋈ audit IP ⋈ IdP session ⋈ HR ⋈ asset registry ⋈ workflow / exception / calendar.
+-- MAGIC
+-- MAGIC This notebook is a Lakeflow pipeline source; run it through pipeline `febar-e2e-access-movement`.
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ## Identity sessions
+
+-- COMMAND ----------
+
+-- Identity context per sign-in: is this device known for this employee?
+CREATE OR REFRESH MATERIALIZED VIEW silver_identity_sessions
+COMMENT 'IdP sign-ins enriched with CMDB device assignment and first-seen device history per employee'
+TBLPROPERTIES ('quality' = 'silver')
+AS WITH s AS (
+  SELECT i.*, e.employee_id, e.full_name, e.department, e.timezone,
+         min(i.signin_time) OVER (PARTITION BY i.user_email, i.device_id) AS device_first_seen
+  FROM silver_idp_signins i JOIN silver_employees e ON i.user_email = e.email
+)
+SELECT s.*, from_utc_timestamp(s.signin_time, s.timezone) AS signin_local,
+  d.hostname AS device_hostname, d.device_type, d.managed AS device_managed, d.assignment_status,
+  d.assigned_employee_id,
+  coalesce(d.assigned_employee_id = s.employee_id, false) AS device_assigned_to_user,
+  s.signin_time = s.device_first_seen AND s.signin_time > timestamp'2026-07-15' AS is_new_device_for_user
+FROM s LEFT JOIN silver_devices d ON s.device_id = d.device_id;
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ## Sensitive access
+
+-- COMMAND ----------
+
 -- One row per statement: query history x lineage x asset registry x HR x audit (source IP) x IdP session (device)
 CREATE OR REFRESH MATERIALIZED VIEW silver_sensitive_access
 COMMENT 'Who accessed which governed asset: statement-level access with sensitivity, local time, device, entitlement and workflow context'

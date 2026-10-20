@@ -1,7 +1,28 @@
--- =====================================================================
--- Fusion (rules + ML) and GenAI threat assessment with competing hypotheses
--- =====================================================================
-CREATE OR REPLACE TABLE capmarkets_stg.febar_e2e.gold_incident_risk
+# Databricks notebook source
+# MAGIC %md
+# MAGIC # Q4 - What evidence supports the threat assessment?
+# MAGIC
+# MAGIC 1. **Fusion**: the rules evidence score from `gold_incidents` (60%) is fused with the Isolation Forest score
+# MAGIC    for the same employee-day (40%) into `gold_incident_risk` with a P1-P4 priority.
+# MAGIC 2. **GenAI assessment**: `ai_query` (Claude Sonnet) weighs **H1 insider misuse** against **H2 account or device
+# MAGIC    compromise** for every P1/P2, exception-explained and DLP-only incident, and writes `gold_incident_assessments`.
+
+# COMMAND ----------
+
+dbutils.widgets.text("catalog", "capmarkets_stg")
+dbutils.widgets.text("schema", "febar_e2e")
+spark.sql("USE CATALOG IDENTIFIER(:c)", args={"c": dbutils.widgets.get("catalog")})
+spark.sql("USE SCHEMA IDENTIFIER(:s)", args={"s": dbutils.widgets.get("schema")})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Fusion: rules + ML -> priority
+
+# COMMAND ----------
+
+spark.sql("""
+CREATE OR REPLACE TABLE gold_incident_risk
 COMMENT 'Incident risk: rules evidence score fused with the ML anomaly score for the same employee-day'
 AS SELECT i.*, a.anomaly_score, a.is_anomaly, a.top_drivers,
   round(least(100, i.rules_risk_score * 0.6 + coalesce(a.anomaly_score, 0) * 100 * 0.4
@@ -10,17 +31,27 @@ AS SELECT i.*, a.anomaly_score, a.is_anomaly, a.top_drivers,
        WHEN least(100, i.rules_risk_score * 0.6 + coalesce(a.anomaly_score, 0) * 40) >= 75 THEN 'P1'
        WHEN least(100, i.rules_risk_score * 0.6 + coalesce(a.anomaly_score, 0) * 40) >= 45 THEN 'P2'
        WHEN least(100, i.rules_risk_score * 0.6 + coalesce(a.anomaly_score, 0) * 40) >= 25 THEN 'P3' ELSE 'P4' END AS priority
-FROM capmarkets_stg.febar_e2e.gold_incidents i
-LEFT JOIN capmarkets_stg.febar_e2e.gold_user_day_anomaly a
-  ON a.employee_id = i.employee_id AND a.activity_date = i.incident_date;
+FROM gold_incidents i
+LEFT JOIN gold_user_day_anomaly a
+  ON a.employee_id = i.employee_id AND a.activity_date = i.incident_date
+""")
+display(spark.sql("SELECT priority, count(*) AS incidents FROM gold_incident_risk GROUP BY priority ORDER BY priority"))
 
-CREATE OR REPLACE TABLE capmarkets_stg.febar_e2e.gold_incident_assessments
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## GenAI threat assessment with competing hypotheses
+
+# COMMAND ----------
+
+spark.sql(r"""
+CREATE OR REPLACE TABLE gold_incident_assessments
 COMMENT 'GenAI threat assessment (ai_query, Claude Sonnet): weighs insider misuse vs account/device compromise, ATT&CK narrative, recommended response'
 AS WITH ev AS (
   SELECT r.*,
     (SELECT array_join(collect_list(concat(t.local_hhmm, ' | ', t.source, ' | ', t.observation)), '\n')
-       FROM (SELECT * FROM capmarkets_stg.febar_e2e.gold_incident_timeline x WHERE x.incident_id = r.incident_id ORDER BY step) t) AS timeline_text
-  FROM capmarkets_stg.febar_e2e.gold_incident_risk r
+       FROM (SELECT * FROM gold_incident_timeline x WHERE x.incident_id = r.incident_id ORDER BY step) t) AS timeline_text
+  FROM gold_incident_risk r
   WHERE r.priority IN ('P1', 'P2') OR r.exception_ticket IS NOT NULL OR r.chain_stage = 'dlp_only_no_sensitive_lineage'
 ),
 ctx AS (
@@ -58,4 +89,6 @@ SELECT incident_id, employee_id, full_name, department, role, priority, fused_ri
     'Choose Undetermined when material indicators exist for BOTH misuse and compromise and nothing decisive separates them ',
     '(e.g. no device forensics, no employee interview yet). Reply with the label only.\n\nEVIDENCE:\n', evidence))) AS leading_hypothesis,
   current_timestamp() AS generated_at
-FROM ctx;
+FROM ctx
+""")
+display(spark.sql("SELECT full_name, priority, fused_risk, leading_hypothesis FROM gold_incident_assessments ORDER BY fused_risk DESC"))

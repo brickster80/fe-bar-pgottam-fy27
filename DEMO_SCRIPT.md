@@ -88,12 +88,8 @@ Synced tables in `febar_e2e_lakebase.e2e` (incidents, assessments, timeline, cha
 5. **Sensitive access tab:** Q1 across the company; the governed view (bank numbers masked, forecast filtered — *as you*); and live system-table evidence.
 6. **Dashboard tab:** the embedded AI/BI dashboard, with one page per question and global Employee/Department/Date filters. On Q4, set Employee = Alex Morgan.
 
-## Scene 7 — Genie (2 min)
-Ask in the app or the space:
-1. *Was Alex Morgan's access unusual for Alex and for Finance peers?*
-2. *Did any sensitive data move to an unauthorized destination?*
-3. *What evidence supports the threat assessment for Alex Morgan's incident?*
-4. *Which large extracts were explained by an approved exception ticket?* → Priya / EXC-4471.
+## Scene 7 — Genie (2 min, or 12 min for the full investigation)
+Run the person-agnostic investigation in [GENIE_INVESTIGATION.md](GENIE_INVESTIGATION.md). It starts from "is anyone moving our financial data?" and lets the data surface the incident. For a short version use prompts 2, 4, 6, 10 and 15.
 
 ## Close (1 min)
 - **Before:** four tools, four green lights, no story.

@@ -7,11 +7,14 @@ interface WhoAmI {
   user: string | null;
 }
 
+// Opening of the threat hunt (THREAT_HUNT_DEMO.md): broad first, no names; ask in order, in one conversation from step 4
 const TRY = [
-  'Who accessed sensitive financial data in the last two weeks of September?',
-  "Was Alex Morgan's access unusual for Alex and for Finance peers?",
-  'Did any sensitive data move to an unauthorized destination?',
-  "What evidence supports the threat assessment for Alex Morgan's incident?",
+  'How is our financial data being used this quarter? For each governed financial asset show the departments using it, number of employees, queries and rows read.',
+  'Show the weekly rows read from each restricted financial asset over the quarter. Does any week stand out?',
+  "Which department drove that week's volume on that asset, compared with its usual weekly volume?",
+  'Which client tools are used to query restricted financial assets, and how many employees use each one?',
+  'How many queries against restricted assets ran outside business hours, and how many rows did they return?',
+  'Do the unusual tool, the off-hours queries and that spike point to the same people? Show who is behind them.',
 ];
 
 export function GeniePage() {
@@ -48,12 +51,12 @@ export function GeniePage() {
       </Alert>
 
       <div className="flex flex-wrap gap-2 text-xs">
-        <span className="text-muted-foreground">Try:</span>
-        {TRY.map((q) => <Badge key={q} variant="outline" className="font-normal">{q}</Badge>)}
+        <span className="text-muted-foreground">Start the hunt:</span>
+        {TRY.map((q, i) => <Badge key={q} variant="outline" className="font-normal text-left whitespace-normal">{i + 1}. {q}</Badge>)}
       </div>
 
       <div className="h-[min(640px,66vh)] border rounded-lg overflow-hidden bg-card">
-        <GenieChat alias="e2e" placeholder="e.g. Who accessed vendor bank accounts for the first time?" />
+        <GenieChat alias="e2e" placeholder="e.g. How is our financial data being used this quarter?" />
       </div>
     </div>
   );

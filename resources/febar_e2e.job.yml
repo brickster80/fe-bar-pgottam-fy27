@@ -2,7 +2,7 @@ resources:
   jobs:
     febar_e2e_daily:
       name: febar-e2e-access-movement-daily
-      description: "Authorized access, unauthorized movement: Lakeflow ingest+correlate -> ML anomaly -> rules+ML fusion + GenAI assessment -> Lakebase refresh"
+      description: "Authorized access, unauthorized movement: Lakeflow ingest+correlate -> ML anomaly -> rules+ML fusion + GenAI assessment -> story validation -> Lakebase refresh"
       schedule:
         quartz_cron_expression: "0 30 6 * * ?"
         timezone_id: UTC
@@ -18,11 +18,15 @@ resources:
             base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}"}
         - task_key: fusion_and_genai_assessment
           depends_on: [{task_key: ml_anomaly_scoring}]
-          sql_task:
-            warehouse_id: ${var.warehouse_id}
-            file:
-              path: ../src/ml/02_assessment.sql
-        - task_key: refresh_lakebase_serving
+          notebook_task:
+            notebook_path: ../src/ml/02_fusion_genai_assessment.py
+            base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}"}
+        - task_key: validate_story
           depends_on: [{task_key: fusion_and_genai_assessment}]
+          notebook_task:
+            notebook_path: ../src/tests/validate_story.py
+            base_parameters: {catalog: "${var.catalog}", schema: "${var.schema}"}
+        - task_key: refresh_lakebase_serving
+          depends_on: [{task_key: validate_story}]
           notebook_task:
             notebook_path: ../src/serving/refresh_lakebase_sync.py

@@ -5,14 +5,14 @@ End-to-end Databricks build on `e2-demo-field-eng`, schema **`capmarkets_stg.feb
 | Stage | Asset | Code |
 |---|---|---|
 | Raw data (synthetic) | Volume `raw_landing`: `uc_audit`, `query_history`, `table_lineage`, `idp`, `endpoint`, `dlp`, `hr`, `devices`, `assets`, `workflows`, `exceptions`, `calendar`; governed stand-in tables | `data_gen/generate_raw.py` |
-| Lakeflow | Pipeline `febar-e2e-access-movement` (12 bronze → silver correlation → gold Q2/Q3/Q4) | `src/pipeline/transformations/` |
+| Lakeflow | Pipeline `febar-e2e-access-movement` (12 bronze → silver correlation → gold Q2/Q3/Q4), sourced from 4 SQL notebooks: `01_bronze_ingest`, `02_silver_normalize`, `03_silver_identity_correlation` (Q1), `04_gold_detections` (Q2–Q4) | `src/pipeline/notebooks/` |
 | Unity Catalog | Tags, masks (`mask_bank_number`), row filter (`filter_forecast`), `gov_access_policy`, live views over `system.access.audit` / `system.query.history` / `system.access.table_lineage`, app SP grants | `src/governance/` |
-| ML / GenAI | Isolation Forest `access_movement_iforest@prod` → `gold_user_day_anomaly`; fusion `gold_incident_risk`; `ai_query` → `gold_incident_assessments` | `src/ml/` |
+| ML / GenAI | Notebook `01_train_score_anomaly`: Isolation Forest `access_movement_iforest@prod` → `gold_user_day_anomaly`. Notebook `02_fusion_genai_assessment`: fusion `gold_incident_risk`; `ai_query` → `gold_incident_assessments` | `src/ml/` |
 | Lakebase | Project `febar-e2e`; synced `febar_e2e_lakebase.e2e.*` (5 tables); app-owned `e2e_response` | `src/serving/refresh_lakebase_sync.py` |
 | Genie | "Authorized Access, Unauthorized Movement" (`01f1cbe0c38c1d129f67a95d56d9ac69`) | `src/genie/build_space.py` |
 | AI/BI dashboard | "Authorized Access, Unauthorized Movement - Investigation" (`01f1cbe1f41c13c3b4c1964e652762d9`), Genie-linked | `src/dashboard/` |
 | App | `febar-e2e-console` (AppKit: Lakebase + analytics + Genie + embedded dashboard) | `febar-e2e-console/` |
-| Orchestration | Job `febar-e2e-access-movement-daily` | `resources/*.yml` |
+| Orchestration | Job `febar-e2e-access-movement-daily`: pipeline → ML notebook → fusion/GenAI notebook → `validate_story` notebook (fails the run if the story breaks) → Lakebase refresh notebook | `resources/*.yml`, `src/tests/validate_story.py` |
 
 ## Rebuild
 

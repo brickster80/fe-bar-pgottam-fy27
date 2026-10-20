@@ -10,5 +10,11 @@ resources:
       continuous: false
       root_path: ../src/pipeline
       libraries:
-        - glob:
-            include: ../src/pipeline/transformations/**
+        - notebook:
+            path: ../src/pipeline/notebooks/01_bronze_ingest.sql
+        - notebook:
+            path: ../src/pipeline/notebooks/02_silver_normalize.sql
+        - notebook:
+            path: ../src/pipeline/notebooks/03_silver_identity_correlation.sql
+        - notebook:
+            path: ../src/pipeline/notebooks/04_gold_detections.sql

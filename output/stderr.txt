@@ -1,0 +1,14 @@
+[SnapStart] Environment variable POD_HOSTNAME is not set
+[SnapStart] Environment variable INSTALL_PROXY_CERTS is not set
+WARNING: A terminally deprecated method in java.lang.System has been called
+WARNING: System::setSecurityManager has been called by com.databricks.backend.daemon.driver.DriverLocal$TrapExitInternal$ (file:/databricks/jars/spark--driver--repl-manager--repl-manager-spark_4.1_2.13_deploy.jar)
+WARNING: Please consider reporting this to the maintainers of com.databricks.backend.daemon.driver.DriverLocal$TrapExitInternal$
+WARNING: System::setSecurityManager will be removed in a future release
+SLF4J: Failed to load class "org.slf4j.impl.StaticLoggerBinder".
+SLF4J: Defaulting to no-operation (NOP) logger implementation
+SLF4J: See http://www.slf4j.org/codes.html#StaticLoggerBinder for further details.
+/databricks/spark/python/pyspark/daemon.py:232: DeprecationWarning: This process (pid=16577) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  pid = os.fork()
+do_all_setup_for_username: set_process_identity took 2.3603439331054688e-05 seconds
+Failed to create handler file for sigquit handler: [Errno 13] Permission denied: '/local_disk0/tmp/faulthandler-1365d3ff-c6b0-4445-9059-b586eb25c2e3/thread_dump_16592'
+Failed to create handler file for sigquit handler: [Errno 13] Permission denied: '/local_disk0/tmp/faulthandler-1365d3ff-c6b0-4445-9059-b586eb25c2e3/thread_dump_16592'

@@ -1,0 +1,68 @@
+[Snapstart] Loaded library snapstart-jni.so from /tmp/temp2660351464374143595snapstart-jni.so
+[SnapStart] getEnv: Environment variable HOSTNAME is ip-10-211-158-0.ec2.internal
+[SnapStart] getEnv: Environment variable POD_UID is f81d79c1-aad6-4dc0-a530-7ca6a3366566
+[SnapStart] getEnv: Environment variable SPARK_EXECUTOR_ATTRIBUTE_POD_NAME is checkpoint-f06e498893b9c2c28f1c5690f05c9ba4-g1-6.1-0
+[SnapStart] getEnv: Environment variable POD_NAME is checkpoint-f06e498893b9c2c28f1c5690f05c9ba4-g1-6.1-0
+[SnapStart] getEnv: Environment variable HOST_IP is 10.211.158.0
+[SnapStart] getEnv: Environment variable DBLET_POD_IP is 10.211.158.0
+[SnapStart] getEnv: Environment variable POD_IP is 10.211.158.0
+Executing command, time = 1792510226544.
+Executing command, time = 1792510236495.
+Executing command, time = 1792510721914.
+[2026-10-20T15:38:45.030+0000][1428.950s][info][gc,heap     ] GC(24) Eden regions: 262->0(131)
+[2026-10-20T15:38:45.030+0000][1428.950s][info][gc,heap     ] GC(24) Survivor regions: 0->26(33)
+[2026-10-20T15:38:45.030+0000][1428.950s][info][gc,heap     ] GC(24) Old regions: 21->21
+[2026-10-20T15:38:45.030+0000][1428.950s][info][gc,heap     ] GC(24) Archive regions: 0->0
+[2026-10-20T15:38:45.030+0000][1428.950s][info][gc,heap     ] GC(24) Humongous regions: 1->1
+[2026-10-20T15:38:45.030+0000][1428.950s][info][gc,metaspace] GC(24) Metaspace: 911016K(914752K)->911016K(914752K) NonClass: 823416K(825344K)->823416K(825344K) Class: 87600K(89408K)->87600K(89408K)
+[2026-10-20T15:38:45.030+0000][1428.950s][info][gc          ] GC(24) Pause Young (Normal) (G1 Evacuation Pause) 8933M->1379M(46112M) 143.624ms
+2026-10-20T15:38:47.967612763Z stacktrace-logger-executor-0 WARN RollingFileAppender 'com.databricks.StacktraceLogging.appender': The bufferSize is set to 128000 but bufferedIO is not true
+[2026-10-20T15:38:54.258+0000][1438.178s][info][gc,heap     ] GC(25) Eden regions: 131->0(126)
+[2026-10-20T15:38:54.258+0000][1438.178s][info][gc,heap     ] GC(25) Survivor regions: 26->6(20)
+[2026-10-20T15:38:54.258+0000][1438.178s][info][gc,heap     ] GC(25) Old regions: 21->47
+[2026-10-20T15:38:54.258+0000][1438.178s][info][gc,heap     ] GC(25) Archive regions: 0->0
+[2026-10-20T15:38:54.258+0000][1438.178s][info][gc,heap     ] GC(25) Humongous regions: 7->7
+[2026-10-20T15:38:54.258+0000][1438.178s][info][gc,metaspace] GC(25) Metaspace: 946719K(951104K)->946719K(951104K) NonClass: 853329K(855616K)->853329K(855616K) Class: 93389K(95488K)->93389K(95488K)
+[2026-10-20T15:38:54.258+0000][1438.178s][info][gc          ] GC(25) Pause Young (Normal) (G1 Evacuation Pause) 5763M->1753M(46112M) 153.208ms
+[2026-10-20T15:38:57.127+0000][1441.046s][info][gc,heap     ] GC(26) Eden regions: 126->0(145)
+[2026-10-20T15:38:57.127+0000][1441.046s][info][gc,heap     ] GC(26) Survivor regions: 6->5(17)
+[2026-10-20T15:38:57.127+0000][1441.046s][info][gc,heap     ] GC(26) Old regions: 47->47
+[2026-10-20T15:38:57.127+0000][1441.046s][info][gc,heap     ] GC(26) Archive regions: 0->0
+[2026-10-20T15:38:57.127+0000][1441.046s][info][gc,heap     ] GC(26) Humongous regions: 7->7
+[2026-10-20T15:38:57.127+0000][1441.046s][info][gc,metaspace] GC(26) Metaspace: 951350K(955840K)->951350K(955840K) NonClass: 857312K(859584K)->857312K(859584K) Class: 94038K(96256K)->94038K(96256K)
+[2026-10-20T15:38:57.127+0000][1441.046s][info][gc          ] GC(26) Pause Young (Normal) (G1 Evacuation Pause) 5785M->1707M(46112M) 19.511ms
+[2026-10-20T15:38:59.737+0000][1443.657s][info][gc,heap     ] GC(27) Eden regions: 145->0(228)
+[2026-10-20T15:38:59.737+0000][1443.657s][info][gc,heap     ] GC(27) Survivor regions: 5->6(19)
+[2026-10-20T15:38:59.737+0000][1443.657s][info][gc,heap     ] GC(27) Old regions: 47->47
+[2026-10-20T15:38:59.737+0000][1443.657s][info][gc,heap     ] GC(27) Archive regions: 0->0
+[2026-10-20T15:38:59.737+0000][1443.657s][info][gc,heap     ] GC(27) Humongous regions: 7->7
+[2026-10-20T15:38:59.737+0000][1443.657s][info][gc,metaspace] GC(27) Metaspace: 953156K(957632K)->953156K(957632K) NonClass: 858883K(861184K)->858883K(861184K) Class: 94272K(96448K)->94272K(96448K)
+[2026-10-20T15:38:59.737+0000][1443.657s][info][gc          ] GC(27) Pause Young (Normal) (G1 Evacuation Pause) 6347M->1744M(46112M) 22.644ms
+[2026-10-20T15:39:02.142+0000][1446.061s][info][gc,heap     ] GC(28) Eden regions: 228->0(341)
+[2026-10-20T15:39:02.142+0000][1446.061s][info][gc,heap     ] GC(28) Survivor regions: 6->8(30)
+[2026-10-20T15:39:02.142+0000][1446.061s][info][gc,heap     ] GC(28) Old regions: 47->47
+[2026-10-20T15:39:02.142+0000][1446.061s][info][gc,heap     ] GC(28) Archive regions: 0->0
+[2026-10-20T15:39:02.142+0000][1446.061s][info][gc,heap     ] GC(28) Humongous regions: 7->7
+[2026-10-20T15:39:02.142+0000][1446.061s][info][gc,metaspace] GC(28) Metaspace: 954601K(959040K)->954601K(959040K) NonClass: 860140K(862400K)->860140K(862400K) Class: 94461K(96640K)->94461K(96640K)
+[2026-10-20T15:39:02.142+0000][1446.061s][info][gc          ] GC(28) Pause Young (Normal) (G1 Evacuation Pause) 9040M->1790M(46112M) 34.863ms
+[2026-10-20T15:39:06.458+0000][1450.377s][info][gc,heap     ] GC(29) Eden regions: 341->0(855)
+[2026-10-20T15:39:06.458+0000][1450.377s][info][gc,heap     ] GC(29) Survivor regions: 8->9(44)
+[2026-10-20T15:39:06.458+0000][1450.377s][info][gc,heap     ] GC(29) Old regions: 47->47
+[2026-10-20T15:39:06.458+0000][1450.377s][info][gc,heap     ] GC(29) Archive regions: 0->0
+[2026-10-20T15:39:06.458+0000][1450.377s][info][gc,heap     ] GC(29) Humongous regions: 7->7
+[2026-10-20T15:39:06.458+0000][1450.377s][info][gc,metaspace] GC(29) Metaspace: 957290K(961728K)->957290K(961728K) NonClass: 862517K(864768K)->862517K(864768K) Class: 94772K(96960K)->94772K(96960K)
+[2026-10-20T15:39:06.458+0000][1450.377s][info][gc          ] GC(29) Pause Young (Normal) (G1 Evacuation Pause) 12702M->1837M(46112M) 45.136ms
+[2026-10-20T15:40:00.325+0000][1504.245s][info][gc,heap     ] GC(30) Eden regions: 855->0(136)
+[2026-10-20T15:40:00.325+0000][1504.245s][info][gc,heap     ] GC(30) Survivor regions: 9->22(108)
+[2026-10-20T15:40:00.325+0000][1504.245s][info][gc,heap     ] GC(30) Old regions: 47->47
+[2026-10-20T15:40:00.325+0000][1504.245s][info][gc,heap     ] GC(30) Archive regions: 0->0
+[2026-10-20T15:40:00.325+0000][1504.245s][info][gc,heap     ] GC(30) Humongous regions: 19->19
+[2026-10-20T15:40:00.325+0000][1504.245s][info][gc,metaspace] GC(30) Metaspace: 1012203K(1017408K)->1012203K(1017408K) NonClass: 908715K(911424K)->908715K(911424K) Class: 103487K(105984K)->103487K(105984K)
+[2026-10-20T15:40:00.325+0000][1504.245s][info][gc          ] GC(30) Pause Young (Normal) (G1 Evacuation Pause) 29581M->2624M(46112M) 135.025ms
+[2026-10-20T15:40:08.538+0000][1512.457s][info][gc,heap     ] GC(31) Eden regions: 136->0(860)
+[2026-10-20T15:40:08.538+0000][1512.457s][info][gc,heap     ] GC(31) Survivor regions: 22->4(20)
+[2026-10-20T15:40:08.538+0000][1512.457s][info][gc,heap     ] GC(31) Old regions: 47->66
+[2026-10-20T15:40:08.538+0000][1512.457s][info][gc,heap     ] GC(31) Archive regions: 0->0
+[2026-10-20T15:40:08.538+0000][1512.457s][info][gc,heap     ] GC(31) Humongous regions: 19->19
+[2026-10-20T15:40:08.538+0000][1512.457s][info][gc,metaspace] GC(31) Metaspace: 1013800K(1019136K)->1013800K(1019136K) NonClass: 910244K(913024K)->910244K(913024K) Class: 103556K(106112K)->103556K(106112K)
+[2026-10-20T15:40:08.538+0000][1512.457s][info][gc          ] GC(31) Pause Young (Normal) (G1 Evacuation Pause) 6976M->2658M(46112M) 149.234ms

@@ -6,9 +6,9 @@ tables = ["gold_incident_risk", "gold_incident_assessments", "gold_incident_time
           "silver_dlp_events", "silver_employees", "silver_asset_registry", "silver_exceptions"]
 samples = [
     "Who accessed sensitive financial data in the last two weeks of September?",
-    "Which restricted-data accesses were most unusual for the employee and their department peers?",
+    "Was Alex Morgan's access unusual for Alex and for Finance peers?",
     "Did any sensitive data move to an unauthorized destination?",
-    "What evidence supports the threat assessment for the highest-priority incident?",
+    "What evidence supports the threat assessment for Alex Morgan's incident?",
     "Who accessed vendor bank accounts for the first time, and from which device?",
     "Which large extracts were explained by an approved exception ticket?",
 ]
@@ -21,17 +21,11 @@ FROM {FQ}.silver_sensitive_access
 WHERE sensitivity_rank >= 3 AND access_date >= DATE'2026-09-16'
 GROUP BY ALL ORDER BY rows_returned DESC LIMIT 25"""),
     ("Was the access unusual for the employee and their peers?",
-     f"""SELECT full_name, department, role, asset_full_name, access_date, rows_returned, user_median_daily_rows, ratio_vs_self,
+     f"""SELECT full_name, department, asset_full_name, access_date, rows_returned, user_median_daily_rows, ratio_vs_self,
        peer_median_daily_rows, ratio_vs_peers, peers_using_asset, dept_headcount, is_first_access_to_asset,
        off_hours_statements, unassigned_device
 FROM {FQ}.gold_access_anomalies
-WHERE sensitivity_rank >= 3
-ORDER BY greatest(coalesce(ratio_vs_self, 0), coalesce(ratio_vs_peers, 0)) DESC LIMIT 10"""),
-    ("How did sensitive data move, by chain stage?",
-     f"""SELECT chain_stage, count(*) AS chains, count(DISTINCT employee_id) AS employees,
-       sum(produced_rows) AS rows_moved, collect_set(destination) AS destinations
-FROM {FQ}.gold_exfil_chains GROUP BY chain_stage
-ORDER BY CASE chain_stage WHEN 'uploaded_unauthorized' THEN 1 WHEN 'uploaded_approved' THEN 2 ELSE 3 END"""),
+WHERE full_name = 'Alex Morgan' AND access_date = DATE'2026-09-24'"""),
     ("Did data move to an unauthorized destination?",
      f"""SELECT full_name, department, asset_full_name, query_local, produced_rows, client_application, device_hostname,
        file_name, round(size_bytes / 1e6, 1) AS file_mb, upload_app, instance_type, destination_account, dlp_profile, upload_time
@@ -39,26 +33,9 @@ FROM {FQ}.gold_exfil_chains
 WHERE chain_stage = 'uploaded_unauthorized'"""),
     ("What evidence supports the threat assessment?",
      f"""SELECT t.local_hhmm, t.source, t.observation, t.why_it_matters, t.evidence_ref
-FROM {FQ}.gold_incident_timeline t
-WHERE t.incident_id = (SELECT incident_id FROM {FQ}.gold_incident_risk ORDER BY priority, fused_risk DESC LIMIT 1)
+FROM {FQ}.gold_incident_timeline t JOIN {FQ}.gold_incident_risk r USING (incident_id)
+WHERE r.full_name = 'Alex Morgan' AND r.incident_date = DATE'2026-09-24'
 ORDER BY t.step"""),
-    ("Before the incident, had the employee used the incident device, and which devices do they normally use?",
-     f"""WITH top AS (SELECT incident_id, employee_id, device_id FROM {FQ}.gold_incident_risk ORDER BY priority, fused_risk DESC LIMIT 1),
-inc AS (SELECT min(s.signin_time) AS incident_signin FROM {FQ}.silver_identity_sessions s JOIN top t
-        ON s.employee_id = t.employee_id AND s.device_id = t.device_id)
-SELECT s.full_name, s.department, s.device_hostname, s.device_type, s.device_assigned_to_user,
-       count_if(s.signin_time < inc.incident_signin) AS signins_before_incident,
-       min(s.signin_local) AS first_seen_local, max(s.signin_local) AS last_seen_local
-FROM {FQ}.silver_identity_sessions s JOIN top t ON s.employee_id = t.employee_id CROSS JOIN inc
-GROUP BY ALL ORDER BY signins_before_incident DESC"""),
-    ("Was the destination account from the incident used by anyone else?",
-     f"""WITH top AS (SELECT incident_id, employee_id FROM {FQ}.gold_incident_risk ORDER BY priority, fused_risk DESC LIMIT 1),
-acct AS (SELECT DISTINCT c.destination_account FROM {FQ}.gold_exfil_chains c JOIN top t ON c.employee_id = t.employee_id
-         WHERE c.chain_stage = 'uploaded_unauthorized')
-SELECT a.destination_account, count(DISTINCT d.user_email) AS employees_using_account, collect_set(d.user_email) AS users,
-       count(*) AS uploads, min(d.upload_time) AS first_upload, max(d.upload_time) AS last_upload
-FROM acct a LEFT JOIN {FQ}.silver_dlp_events d ON d.destination_account = a.destination_account
-GROUP BY a.destination_account"""),
     ("Which large extracts were explained by an exception ticket?",
      f"""SELECT r.full_name, r.department, r.primary_asset, r.produced_rows, r.exception_ticket, x.justification, x.approver,
        r.destination, r.priority
@@ -80,16 +57,8 @@ TABLE GUIDE
 - silver_identity_sessions: IdP sign-ins with device assignment (device_assigned_to_user, is_new_device_for_user).
 - silver_dlp_events: uploads; is_unapproved_destination = not the corporate tenant.
 
-INVESTIGATION CONVENTIONS
-- "Highest-priority" / "top" / "that" incident = gold_incident_risk ORDER BY priority ASC, fused_risk DESC; in follow-ups keep using the incident (incident_id) or employee from the previous answer.
-- "Did data move?" questions: summarise gold_exfil_chains by chain_stage first, then list uploaded_unauthorized chains first. Approved corporate uploads are expected business activity, not findings.
-- Device history: is_new_device_for_user = true on the incident sign-in means the employee had never used that device before.
-- "Before the incident" / "previously" = strictly earlier than the incident's first event (e.g. signin_time < the incident sign-in); never count the incident's own sign-in, query or upload as prior history.
-- Separating the hypotheses: compromise is supported by other employees signing in from the same device (silver_identity_sessions by device_hostname) or anomalous sign-in context; misuse is supported by the employee's own managed device and normal sign-in pattern. A personal destination_account seen for only one employee is neither proof of misuse nor of compromise.
-
 RULES
 - Never claim the employee is malicious. Present the two hypotheses (insider misuse vs account/device compromise) with their indicators.
-- Always answer in English, including follow-up suggestions.
 - Always include full_name, department and role when listing employees. Format large numbers with thousands separators."""
 
 

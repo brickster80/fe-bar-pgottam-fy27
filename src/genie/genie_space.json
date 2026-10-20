@@ -11,7 +11,7 @@
       {
         "id": "10000000000000000000000000000002",
         "question": [
-          "Which restricted-data accesses were most unusual for the employee and their department peers?"
+          "Was Alex Morgan's access unusual for Alex and for Finance peers?"
         ]
       },
       {
@@ -23,7 +23,7 @@
       {
         "id": "10000000000000000000000000000004",
         "question": [
-          "What evidence supports the threat assessment for the highest-priority incident?"
+          "What evidence supports the threat assessment for Alex Morgan's incident?"
         ]
       },
       {
@@ -102,28 +102,15 @@
           "Was the access unusual for the employee and their peers?"
         ],
         "sql": [
-          "SELECT full_name, department, role, asset_full_name, access_date, rows_returned, user_median_daily_rows, ratio_vs_self,\n",
+          "SELECT full_name, department, asset_full_name, access_date, rows_returned, user_median_daily_rows, ratio_vs_self,\n",
           "       peer_median_daily_rows, ratio_vs_peers, peers_using_asset, dept_headcount, is_first_access_to_asset,\n",
           "       off_hours_statements, unassigned_device\n",
           "FROM capmarkets_stg.febar_e2e.gold_access_anomalies\n",
-          "WHERE sensitivity_rank >= 3\n",
-          "ORDER BY greatest(coalesce(ratio_vs_self, 0), coalesce(ratio_vs_peers, 0)) DESC LIMIT 10\n"
+          "WHERE full_name = 'Alex Morgan' AND access_date = DATE'2026-09-24'\n"
         ]
       },
       {
         "id": "20000000000000000000000000000003",
-        "question": [
-          "How did sensitive data move, by chain stage?"
-        ],
-        "sql": [
-          "SELECT chain_stage, count(*) AS chains, count(DISTINCT employee_id) AS employees,\n",
-          "       sum(produced_rows) AS rows_moved, collect_set(destination) AS destinations\n",
-          "FROM capmarkets_stg.febar_e2e.gold_exfil_chains GROUP BY chain_stage\n",
-          "ORDER BY CASE chain_stage WHEN 'uploaded_unauthorized' THEN 1 WHEN 'uploaded_approved' THEN 2 ELSE 3 END\n"
-        ]
-      },
-      {
-        "id": "20000000000000000000000000000004",
         "question": [
           "Did data move to an unauthorized destination?"
         ],
@@ -135,50 +122,19 @@
         ]
       },
       {
-        "id": "20000000000000000000000000000005",
+        "id": "20000000000000000000000000000004",
         "question": [
           "What evidence supports the threat assessment?"
         ],
         "sql": [
           "SELECT t.local_hhmm, t.source, t.observation, t.why_it_matters, t.evidence_ref\n",
-          "FROM capmarkets_stg.febar_e2e.gold_incident_timeline t\n",
-          "WHERE t.incident_id = (SELECT incident_id FROM capmarkets_stg.febar_e2e.gold_incident_risk ORDER BY priority, fused_risk DESC LIMIT 1)\n",
+          "FROM capmarkets_stg.febar_e2e.gold_incident_timeline t JOIN capmarkets_stg.febar_e2e.gold_incident_risk r USING (incident_id)\n",
+          "WHERE r.full_name = 'Alex Morgan' AND r.incident_date = DATE'2026-09-24'\n",
           "ORDER BY t.step\n"
         ]
       },
       {
-        "id": "20000000000000000000000000000006",
-        "question": [
-          "Before the incident, had the employee used the incident device, and which devices do they normally use?"
-        ],
-        "sql": [
-          "WITH top AS (SELECT incident_id, employee_id, device_id FROM capmarkets_stg.febar_e2e.gold_incident_risk ORDER BY priority, fused_risk DESC LIMIT 1),\n",
-          "inc AS (SELECT min(s.signin_time) AS incident_signin FROM capmarkets_stg.febar_e2e.silver_identity_sessions s JOIN top t\n",
-          "        ON s.employee_id = t.employee_id AND s.device_id = t.device_id)\n",
-          "SELECT s.full_name, s.department, s.device_hostname, s.device_type, s.device_assigned_to_user,\n",
-          "       count_if(s.signin_time < inc.incident_signin) AS signins_before_incident,\n",
-          "       min(s.signin_local) AS first_seen_local, max(s.signin_local) AS last_seen_local\n",
-          "FROM capmarkets_stg.febar_e2e.silver_identity_sessions s JOIN top t ON s.employee_id = t.employee_id CROSS JOIN inc\n",
-          "GROUP BY ALL ORDER BY signins_before_incident DESC\n"
-        ]
-      },
-      {
-        "id": "20000000000000000000000000000007",
-        "question": [
-          "Was the destination account from the incident used by anyone else?"
-        ],
-        "sql": [
-          "WITH top AS (SELECT incident_id, employee_id FROM capmarkets_stg.febar_e2e.gold_incident_risk ORDER BY priority, fused_risk DESC LIMIT 1),\n",
-          "acct AS (SELECT DISTINCT c.destination_account FROM capmarkets_stg.febar_e2e.gold_exfil_chains c JOIN top t ON c.employee_id = t.employee_id\n",
-          "         WHERE c.chain_stage = 'uploaded_unauthorized')\n",
-          "SELECT a.destination_account, count(DISTINCT d.user_email) AS employees_using_account, collect_set(d.user_email) AS users,\n",
-          "       count(*) AS uploads, min(d.upload_time) AS first_upload, max(d.upload_time) AS last_upload\n",
-          "FROM acct a LEFT JOIN capmarkets_stg.febar_e2e.silver_dlp_events d ON d.destination_account = a.destination_account\n",
-          "GROUP BY a.destination_account\n"
-        ]
-      },
-      {
-        "id": "20000000000000000000000000000008",
+        "id": "20000000000000000000000000000005",
         "question": [
           "Which large extracts were explained by an exception ticket?"
         ],
@@ -209,16 +165,8 @@
           "- silver_identity_sessions: IdP sign-ins with device assignment (device_assigned_to_user, is_new_device_for_user).\n",
           "- silver_dlp_events: uploads; is_unapproved_destination = not the corporate tenant.\n",
           "\n",
-          "INVESTIGATION CONVENTIONS\n",
-          "- \"Highest-priority\" / \"top\" / \"that\" incident = gold_incident_risk ORDER BY priority ASC, fused_risk DESC; in follow-ups keep using the incident (incident_id) or employee from the previous answer.\n",
-          "- \"Did data move?\" questions: summarise gold_exfil_chains by chain_stage first, then list uploaded_unauthorized chains first. Approved corporate uploads are expected business activity, not findings.\n",
-          "- Device history: is_new_device_for_user = true on the incident sign-in means the employee had never used that device before.\n",
-          "- \"Before the incident\" / \"previously\" = strictly earlier than the incident's first event (e.g. signin_time < the incident sign-in); never count the incident's own sign-in, query or upload as prior history.\n",
-          "- Separating the hypotheses: compromise is supported by other employees signing in from the same device (silver_identity_sessions by device_hostname) or anomalous sign-in context; misuse is supported by the employee's own managed device and normal sign-in pattern. A personal destination_account seen for only one employee is neither proof of misuse nor of compromise.\n",
-          "\n",
           "RULES\n",
           "- Never claim the employee is malicious. Present the two hypotheses (insider misuse vs account/device compromise) with their indicators.\n",
-          "- Always answer in English, including follow-up suggestions.\n",
           "- Always include full_name, department and role when listing employees. Format large numbers with thousands separators.\n"
         ]
       }

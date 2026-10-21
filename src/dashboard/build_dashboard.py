@@ -115,8 +115,8 @@ PRIO = [("P1", RED), ("P2", AMBER), ("P3", NAVY), ("P4", GREY)]
 q1 = [
     text("q1-title", ["# Q1 - Who accessed sensitive financial data?\n",
                       "Databricks **audit** (identity, source IP), **query history** (statement, rows, client) and **table lineage** (statement -> governed table), "
-                      "joined to HR and the identity provider. Governed assets: `reporting.monthly_summary` (confidential), "
-                      "`treasury.vendor_bank_accounts` (restricted), `strategy.acquisition_forecast` (highly restricted). *Synthetic data; Halcyon Financial is fictional.*"], pos(0, 0, 12, 2)),
+                      "joined to HR and the identity provider. Governed assets: `portfolio.fund_holdings` (confidential), "
+                      "`research.unpublished_ratings` (restricted), `trading.pending_block_orders` (highly restricted). *Synthetic data; Harborview Investment Management is fictional.*"], pos(0, 0, 12, 2)),
     counter("kpi-q1-q", "ds_access", "Sensitive Queries", "Queries on sensitive financial assets", pos(0, 2, 3, 3)),
     counter("kpi-q1-e", "ds_access", "Employees On Restricted Assets", "Employees on restricted assets", pos(3, 2, 3, 3)),
     counter("kpi-q1-o", "ds_access", "Off-hours Sensitive Queries", "Off-hours sensitive queries", pos(6, 2, 3, 3)),

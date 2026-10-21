@@ -1,4 +1,4 @@
-# Genie investigation storyline: "Is anyone moving our financial data?"
+# Genie investigation storyline: "Is anyone moving our investment data?" (Harborview Investment Management)
 
 **Use it in:** the Genie space "Authorized Access, Unauthorized Movement" (`01f1cbe0c38c1d129f67a95d56d9ac69`) or the app's **Ask Genie** tab · **Runtime:** ~12 min
 
@@ -9,20 +9,20 @@
 ---
 
 ## Opening (30 s)
-> "Our CFO asks a simple question: *is anyone moving our financial data somewhere it shouldn't go?* We have no alert and no suspect, just the governed data, the Databricks audit trail, and our identity, endpoint and DLP feeds. Let's ask."
+> "Our Chief Compliance Officer asks a simple question: *is anyone moving our investment data (holdings, unpublished research, pending trades) somewhere it shouldn't go?* We have no alert and no suspect, just the governed data, the Databricks audit trail, and our identity, endpoint and DLP feeds. Let's ask."
 
 ## Act 1: Scope the problem (new chat)
-**1.** `Which governed financial assets do we have, how sensitive is each one, and what is its expected use?`
-- *Shows:* the three `finance_prod` assets. Monthly summary is confidential (routine reporting), vendor bank accounts are restricted (approved treasury workflows), the acquisition forecast is highly restricted (corporate development only). Two non-finance assets also appear.
+**1.** `Which governed investment assets do we have, how sensitive is each one, and what is its expected use?`
+- *Shows:* the three `invest_prod` assets. Fund holdings are confidential (portfolio and fund reporting), unpublished research ratings are restricted (research publishing workflow), pending block orders are highly restricted (trading desk only). Two non-finance assets also appear.
 - *Say:* "Expected use comes from the asset registry. That's the business context that will tell us later what's normal."
 
 **2.** `Give me the quarter at a glance: how many sensitive-data queries were there, how many employees touched restricted assets, how many files were created from sensitive queries, and how many of those were uploaded to an unapproved destination?`
 - *Shows:* **21,012** sensitive queries · **134** employees on restricted assets · ~**1,583** files created · **1** upload to an unapproved destination.
 - *Say:* "Twenty-one thousand queries and one file that left. That's the needle. Now let's find it the way an analyst would, not by jumping to the answer."
 
-## Act 2 (Q1): Who accessed sensitive financial data? (new chat)
+## Act 2 (Q1): Who accessed sensitive investment data? (new chat)
 **3.** `Who accessed restricted financial data in the last two weeks? Show employee, department, role, asset, number of queries and total rows.`
-- *Shows:* mostly Treasury analysts with ~20+ queries each (their job). Two non-Treasury employees sit at the top by **rows**, one from Finance and one from Accounting.
+- *Shows:* mostly Equity Research analysts with ~20+ queries each (their job). Two non-research employees sit at the top by **rows**, one from Portfolio Management and one from Compliance.
 - *Say:* "Everyone here had a legitimate grant. UC allowed every read. Access alone isn't the question. *Unusual* access is."
 
 ## Act 3 (Q2): Was it unusual for the employee and their peers? (new chat)
@@ -36,15 +36,15 @@
 
 ## Act 4 (Q3): Did the data move to an unauthorized destination? (new chat)
 **6.** `Did any sensitive data move off an endpoint? Summarise the query-to-file-to-upload chains by stage, then show any that went to an unapproved destination.`
-- *Shows:* **796** materialized only, **793** uploaded to the corporate SharePoint (approved), and **1 chain uploaded to a personal Dropbox account**: 480,000 rows of vendor bank accounts. The name on that chain matches the top row of Act 3.
+- *Shows:* **796** materialized only, **793** uploaded to the corporate SharePoint (approved), and **1 chain uploaded to a personal Dropbox account**: 480,000 rows of unpublished research ratings and price targets. The name on that chain matches the top row of Act 3.
 - *Say:* "The chain links the query to a file created by the same client process on the same device, and that file to an upload with the same SHA-256. Three systems, one story."
 
 **7.** *(follow-up)* `Were there uploads to personal cloud storage that do not trace back to any governed financial data?`
 - *Shows:* one engineer's ~420 MB personal Dropbox upload with **no lineage to governed data**, rated P3.
-- *Say:* "A DLP-only tool would have put this at the top of the queue. Without lineage it's a policy conversation, not a financial-data incident."
+- *Say:* "A DLP-only tool would have put this at the top of the queue. Without lineage it's a policy conversation, not an investment-data incident."
 
 **8.** *(follow-up)* `Which large extracts are explained by an approved exception ticket?`
-- *Shows:* the Act 3 runner-up: a 52,000-row extract under **EXC-4471** ("Q3 vendor master audit", approved by the Controller), uploaded to corporate SharePoint, rated P4.
+- *Shows:* the Act 3 runner-up: a 52,000-row extract under **EXC-4471** ("Q3 research-publication surveillance review", approved by the Chief Compliance Officer), uploaded to corporate SharePoint, rated P4.
 - *Say:* "Big and unusual, but approved and kept inside the tenant. Business context clears it, so we don't waste analyst time."
 
 ## Act 5 (Q4): What evidence supports the threat assessment? (new chat; keep it open for Act 6)
@@ -52,7 +52,7 @@
 - *Shows:* 17 candidates. Exactly **one P1** (fused risk 100, `uploaded_unauthorized`), then a P2 that was `materialized_only` and several P3s.
 
 **10.** `For the highest-priority incident, show the evidence timeline in local time.`
-- *Shows:* **21:40** sign-in from a loaner laptop → **21:43** first touch of vendor bank accounts (25 rows) → **21:46** 480,000 rows via DBeaver → **21:49** EDR: `vendor_master_full.csv` (86.4 MB) → **21:53** DLP: same file to a personal Dropbox → **21:55** correlated incident.
+- *Shows:* **21:40** sign-in from a loaner laptop → **21:43** first touch of unpublished research (25 rows) → **21:46** 480,000 rows via DBeaver → **21:49** EDR: `research_pipeline_full.csv` (86.4 MB) → **21:53** DLP: same file to a personal Dropbox → **21:55** correlated incident.
 - *Say:* "Fifteen minutes and four systems. Each step alone was a weak signal; together it's one explainable incident."
 
 ## Act 6: Misuse or compromise? (same chat as Act 5)
@@ -84,6 +84,7 @@
 ---
 
 ## Presenter notes
+- **Prompt 16:** on the Harborview data Genie sometimes answers with the triage label ("Escalate") instead of listing actions. If so, show the recommended actions on the app's incident page (Threat assessment panel) instead.
 - **Clarifying suggestions:** Genie sometimes ends with "Would you prefer…?". Ignore it and ask the next prompt.
 - **Re-wording:** if you improvise, keep anchoring follow-ups to "the highest-priority incident" or "that file". Avoid "personal destination" in Act 6: Genie maps that phrase to a column that also matches the DLP-only case and can switch incidents.
 - **Show the SQL:** in Acts 4 and 6, open **Show code** on at least one answer to prove the joins (lineage `statement_id`, same `device_id`, same `sha256`).

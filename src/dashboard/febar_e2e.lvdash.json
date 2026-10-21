@@ -5,7 +5,7 @@
    "displayName": "Q1 Sensitive access (statement level)",
    "queryLines": [
     "SELECT statement_id, access_date, department, full_name, role,\n",
-    "       replace(replace(asset_full_name, 'finance_prod.', ''), 'sales_prod.', '') AS asset, sensitivity, sensitivity_rank,\n",
+    "       replace(replace(asset_full_name, 'invest_prod.', ''), 'clients_prod.', '') AS asset, sensitivity, sensitivity_rank,\n",
     "       produced_rows, client_application, is_off_hours,\n",
     "       CASE WHEN device_assigned_to_user THEN 'Assigned device' ELSE 'Unassigned device' END AS device_context,\n",
     "       CASE WHEN exception_ticket IS NOT NULL THEN 'Exception ticket' WHEN has_approved_workflow THEN 'Approved workflow' ELSE 'Outside workflow' END AS workflow_context\n",
@@ -36,7 +36,7 @@
    "displayName": "Q2 Access vs self and peers",
    "queryLines": [
     "SELECT anomaly_id, access_date, department, full_name, role,\n",
-    "       replace(asset_full_name, 'finance_prod.', '') AS asset, sensitivity, rows_returned, user_median_daily_rows,\n",
+    "       replace(asset_full_name, 'invest_prod.', '') AS asset, sensitivity, rows_returned, user_median_daily_rows,\n",
     "       peer_median_daily_rows, ratio_vs_self, ratio_vs_peers, is_first_access_to_asset, unassigned_device,\n",
     "       CASE WHEN ratio_vs_self >= 10 OR ratio_vs_peers >= 20 THEN 'Unusual' ELSE 'Within baseline' END AS volume_verdict\n",
     "FROM gold_access_anomalies\n",
@@ -77,7 +77,7 @@
    "name": "ds_chains",
    "displayName": "Q3 Access -> file -> destination chains",
    "queryLines": [
-    "SELECT chain_id, access_date, department, full_name, role, replace(asset_full_name, 'finance_prod.', '') AS asset,\n",
+    "SELECT chain_id, access_date, department, full_name, role, replace(asset_full_name, 'invest_prod.', '') AS asset,\n",
     "       produced_rows, client_application, device_hostname, file_name, round(size_bytes / 1e6, 1) AS file_mb,\n",
     "       coalesce(upload_app, 'No upload') AS upload_app, coalesce(instance_type, 'none') AS instance_type,\n",
     "       coalesce(destination_account, '') AS destination_account, chain_stage,\n",
@@ -106,7 +106,7 @@
    "queryLines": [
     "SELECT r.incident_id, r.incident_date AS access_date, r.department, r.full_name, r.role, r.priority, r.fused_risk,\n",
     "       r.rules_risk_score, round(coalesce(r.anomaly_score, 0) * 100, 1) AS ml_anomaly_100, r.chain_stage,\n",
-    "       replace(r.primary_asset, 'finance_prod.', '') AS asset, r.produced_rows, r.exception_ticket,\n",
+    "       replace(r.primary_asset, 'invest_prod.', '') AS asset, r.produced_rows, r.exception_ticket,\n",
     "       array_join(r.attack_techniques, ', ') AS attack_techniques,\n",
     "       array_join(r.compromise_indicators, '; ') AS compromise_indicators,\n",
     "       array_join(r.misuse_indicators, '; ') AS misuse_indicators,\n",
@@ -152,7 +152,7 @@
       "multilineTextboxSpec": {
        "lines": [
         "# Q1 - Who accessed sensitive financial data?\n",
-        "Databricks **audit** (identity, source IP), **query history** (statement, rows, client) and **table lineage** (statement -> governed table), joined to HR and the identity provider. Governed assets: `reporting.monthly_summary` (confidential), `treasury.vendor_bank_accounts` (restricted), `strategy.acquisition_forecast` (highly restricted). *Synthetic data; Halcyon Financial is fictional.*"
+        "Databricks **audit** (identity, source IP), **query history** (statement, rows, client) and **table lineage** (statement -> governed table), joined to HR and the identity provider. Governed assets: `portfolio.fund_holdings` (confidential), `research.unpublished_ratings` (restricted), `trading.pending_block_orders` (highly restricted). *Synthetic data; Harborview Investment Management is fictional.*"
        ]
       }
      },

@@ -290,7 +290,7 @@ SELECT
   filter(array(
     CASE WHEN exception_ticket IS NOT NULL THEN concat('Approved exception ', exception_ticket, ' covers this access') END,
     CASE WHEN instance_type = 'corporate' THEN 'Upload went to the approved corporate tenant' END,
-    CASE WHEN close_period THEN 'Month-end close period (higher volumes expected)' END,
+    CASE WHEN close_period THEN 'Month-end reporting period (higher volumes expected)' END,
     CASE WHEN chain_stage IS NULL AND unlinked_personal_bytes IS NOT NULL THEN 'Personal upload has no lineage to any governed financial asset' END), x -> x IS NOT NULL) AS mitigating_factors
 FROM scored;
 

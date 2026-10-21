@@ -195,7 +195,7 @@ export const fmtUtc = (s: string | null | undefined) =>
 /** Columns named *_local hold the employee's wall-clock time; render without timezone conversion. */
 export const fmtLocal = (s: string | null | undefined) => (s ? String(s).replace('T', ' ').slice(0, 16) + ' local' : '—');
 export const fmtMb = (bytes: number | null | undefined) => (bytes ? `${(Number(bytes) / 1e6).toFixed(1)} MB` : '—');
-export const shortAsset = (a: string | null | undefined) => (a ? a.replace('finance_prod.', '').replace('sales_prod.', '').replace('analytics_prod.', '') : '—');
+export const shortAsset = (a: string | null | undefined) => (a ? a.replace('invest_prod.', '').replace('clients_prod.', '').replace('analytics_prod.', '') : '—');
 /** Analytics (warehouse) results serialize numbers/booleans as strings; coerce explicitly. */
 export const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v ?? 0));
 export const isTrue = (v: unknown): boolean => v === true || v === 'true';

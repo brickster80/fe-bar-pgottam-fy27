@@ -43,7 +43,7 @@ function RestrictedAccessors() {
     <Card>
       <CardHeader>
         <CardTitle>Who touched restricted assets</CardTitle>
-        <CardDescription>Vendor bank accounts and acquisition forecast, ranked by volume vs the employee&apos;s own baseline</CardDescription>
+        <CardDescription>Unpublished research and pending block orders, ranked by volume vs the employee&apos;s own baseline</CardDescription>
       </CardHeader>
       <CardContent>
         {loading && <LoadingBlock rows={8} />}
@@ -91,10 +91,10 @@ function RestrictedAccessors() {
 
 function GovernedView() {
   const me = useAnalyticsQuery('policy_me', {});
-  const vendors = useAnalyticsQuery('governed_vendor_sample', {});
-  const forecast = useAnalyticsQuery('governed_forecast_visible', {});
+  const research = useAnalyticsQuery('governed_research_sample', {});
+  const orders = useAnalyticsQuery('governed_orders_visible', {});
   const p = me.data?.[0];
-  const f = forecast.data?.[0];
+  const f = orders.data?.[0];
   return (
     <Card>
       <CardHeader>
@@ -107,26 +107,27 @@ function GovernedView() {
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <ShieldCheck className="h-4 w-4 text-muted-foreground" />
             <span className="font-mono text-xs">{p.principal}</span>
-            <Badge variant={isTrue(p.can_view_bank_details) ? 'default' : 'secondary'}>Bank details: {isTrue(p.can_view_bank_details) ? 'unmasked' : 'masked'}</Badge>
-            <Badge variant="outline">Acquisition forecast: {isTrue(p.can_view_forecast) ? 'visible' : 'filtered'}</Badge>
+            <Badge variant={isTrue(p.can_view_unpublished) ? 'default' : 'secondary'}>Unpublished ratings: {isTrue(p.can_view_unpublished) ? 'unmasked' : 'masked'}</Badge>
+            <Badge variant="outline">Pending block orders: {isTrue(p.can_view_block_orders) ? 'visible' : 'filtered'}</Badge>
           </div>
         )}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
-            <div className="text-xs font-medium text-muted-foreground mb-2">treasury_vendor_bank_accounts · column masks on routing_number, account_number</div>
-            {vendors.loading && <LoadingBlock rows={4} />}
-            {vendors.error && <ErrorBlock message={vendors.error} />}
-            {vendors.data && (
+            <div className="text-xs font-medium text-muted-foreground mb-2">research_unpublished_ratings · column masks on new_rating, new_price_target</div>
+            {research.loading && <LoadingBlock rows={4} />}
+            {research.error && <ErrorBlock message={research.error} />}
+            {research.data && (
               <Table>
-                <TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Bank</TableHead><TableHead>Routing</TableHead><TableHead>Account</TableHead><TableHead>Country</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Ticker</TableHead><TableHead>Current</TableHead><TableHead>New rating</TableHead><TableHead className="text-right">New target</TableHead><TableHead>Publish</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {vendors.data.map((v) => (
-                    <TableRow key={v.vendor_id}>
-                      <TableCell className="text-sm">{v.vendor_name}</TableCell>
-                      <TableCell className="text-xs">{v.bank_name}</TableCell>
-                      <TableCell className="font-mono text-xs">{v.routing_number}</TableCell>
-                      <TableCell className="font-mono text-xs">{v.account_number}</TableCell>
-                      <TableCell>{v.country}</TableCell>
+                  {research.data.map((v) => (
+                    <TableRow key={v.rating_id}>
+                      <TableCell className="font-mono text-sm">{v.ticker}</TableCell>
+                      <TableCell className="text-xs">{v.current_rating} · {v.current_price_target}</TableCell>
+                      <TableCell className="font-mono text-xs">{v.new_rating}</TableCell>
+                      <TableCell className="font-mono text-xs text-right">{v.new_price_target ?? 'masked'}</TableCell>
+                      <TableCell className="text-xs">{v.planned_publish_date}</TableCell>
+                      <TableCell className="text-xs">{v.status}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -134,19 +135,19 @@ function GovernedView() {
             )}
           </div>
           <div>
-            <div className="text-xs font-medium text-muted-foreground mb-2">strategy_acquisition_forecast · row filter (deal team only)</div>
-            {forecast.loading && <LoadingBlock rows={2} />}
-            {forecast.error && <ErrorBlock message={forecast.error} />}
+            <div className="text-xs font-medium text-muted-foreground mb-2">trading_pending_block_orders · row filter (trading desk only)</div>
+            {orders.loading && <LoadingBlock rows={2} />}
+            {orders.error && <ErrorBlock message={orders.error} />}
             {f && (
               <div className="rounded-md border p-4">
                 <div className="text-3xl font-semibold tabular-nums">{fmtInt(f.visible_rows)}</div>
-                <div className="text-xs text-muted-foreground">rows visible to you · {fmtInt(f.visible_projects)} projects</div>
+                <div className="text-xs text-muted-foreground">rows visible to you · {fmtInt(f.visible_funds)} funds</div>
                 <p className="text-xs text-muted-foreground mt-2">UC removes rows you aren&apos;t entitled to; the app never sees them.</p>
               </div>
             )}
           </div>
         </div>
-        <SourceNote>Policy: capmarkets_stg.febar_e2e.gov_access_policy → mask_bank_number, filter_forecast</SourceNote>
+        <SourceNote>Policy: capmarkets_stg.febar_e2e.gov_access_policy → mask_unpublished_rating, mask_price_target, filter_block_orders</SourceNote>
       </CardContent>
     </Card>
   );

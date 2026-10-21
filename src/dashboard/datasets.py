@@ -2,7 +2,7 @@
 DATASETS = {
     "ds_access": ("Q1 Sensitive access (statement level)", """
 SELECT statement_id, access_date, department, full_name, role,
-       replace(replace(asset_full_name, 'finance_prod.', ''), 'sales_prod.', '') AS asset, sensitivity, sensitivity_rank,
+       replace(replace(asset_full_name, 'invest_prod.', ''), 'clients_prod.', '') AS asset, sensitivity, sensitivity_rank,
        produced_rows, client_application, is_off_hours,
        CASE WHEN device_assigned_to_user THEN 'Assigned device' ELSE 'Unassigned device' END AS device_context,
        CASE WHEN exception_ticket IS NOT NULL THEN 'Exception ticket' WHEN has_approved_workflow THEN 'Approved workflow' ELSE 'Outside workflow' END AS workflow_context
@@ -11,7 +11,7 @@ WHERE sensitivity_rank >= 2 AND execution_status = 'FINISHED'
 """),
     "ds_anomalies": ("Q2 Access vs self and peers", """
 SELECT anomaly_id, access_date, department, full_name, role,
-       replace(asset_full_name, 'finance_prod.', '') AS asset, sensitivity, rows_returned, user_median_daily_rows,
+       replace(asset_full_name, 'invest_prod.', '') AS asset, sensitivity, rows_returned, user_median_daily_rows,
        peer_median_daily_rows, ratio_vs_self, ratio_vs_peers, is_first_access_to_asset, unassigned_device,
        CASE WHEN ratio_vs_self >= 10 OR ratio_vs_peers >= 20 THEN 'Unusual' ELSE 'Within baseline' END AS volume_verdict
 FROM gold_access_anomalies
@@ -24,7 +24,7 @@ SELECT feature_id, activity_date AS access_date, department, full_name, role, an
 FROM gold_user_day_anomaly
 """),
     "ds_chains": ("Q3 Access -> file -> destination chains", """
-SELECT chain_id, access_date, department, full_name, role, replace(asset_full_name, 'finance_prod.', '') AS asset,
+SELECT chain_id, access_date, department, full_name, role, replace(asset_full_name, 'invest_prod.', '') AS asset,
        produced_rows, client_application, device_hostname, file_name, round(size_bytes / 1e6, 1) AS file_mb,
        coalesce(upload_app, 'No upload') AS upload_app, coalesce(instance_type, 'none') AS instance_type,
        coalesce(destination_account, '') AS destination_account, chain_stage,
@@ -35,7 +35,7 @@ FROM gold_exfil_chains
     "ds_incidents": ("Q4 Incidents and assessments", """
 SELECT r.incident_id, r.incident_date AS access_date, r.department, r.full_name, r.role, r.priority, r.fused_risk,
        r.rules_risk_score, round(coalesce(r.anomaly_score, 0) * 100, 1) AS ml_anomaly_100, r.chain_stage,
-       replace(r.primary_asset, 'finance_prod.', '') AS asset, r.produced_rows, r.exception_ticket,
+       replace(r.primary_asset, 'invest_prod.', '') AS asset, r.produced_rows, r.exception_ticket,
        array_join(r.attack_techniques, ', ') AS attack_techniques,
        array_join(r.compromise_indicators, '; ') AS compromise_indicators,
        array_join(r.misuse_indicators, '; ') AS misuse_indicators,

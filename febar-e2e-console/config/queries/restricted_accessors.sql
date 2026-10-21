@@ -1,5 +1,5 @@
 -- @param start_date DATE
--- Who touched restricted assets (vendor banking, acquisition forecast), with entitlement and baseline context
+-- Who touched restricted assets (unpublished research, pending block orders), with entitlement and baseline context
 SELECT a.employee_id, a.full_name, a.department, a.role, a.asset_full_name,
        sum(a.rows_returned) AS rows_returned, max(a.ratio_vs_self) AS max_ratio_vs_self, max(a.ratio_vs_peers) AS max_ratio_vs_peers,
        bool_or(a.is_first_access_to_asset) AS first_access, bool_or(a.unassigned_device) AS unassigned_device,

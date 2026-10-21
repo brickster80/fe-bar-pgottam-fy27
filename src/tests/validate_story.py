@@ -52,7 +52,7 @@ alex = rows("SELECT * FROM gold_incident_risk WHERE incident_id = 'INC-20260924-
 check("Alex incident exists", len(alex) == 1)
 if alex:
     a = alex[0]
-    check("Q1 asset is vendor_bank_accounts", a["primary_asset"] == "finance_prod.treasury.vendor_bank_accounts", a["primary_asset"])
+    check("Q1 asset is unpublished_ratings", a["primary_asset"] == "invest_prod.research.unpublished_ratings", a["primary_asset"])
     check("Q1 device is the loaner", a["device_hostname"] == "LOANER-NYC-07", a["device_hostname"])
     check("Q2 480,000 rows", a["produced_rows"] == 480000, a["produced_rows"])
     check("Q2 >= 10x self and peers", a["max_ratio_vs_self"] >= 10 and a["max_ratio_vs_peers"] >= 10,
@@ -85,6 +85,8 @@ check("Daniel (new managed laptop) has no incident", daniel == 0, daniel)
 
 LABELS = {"Insider misuse", "Account or device compromise", "Undetermined - needs more evidence", "Benign / explained"}
 assess = rows("SELECT incident_id, leading_hypothesis, length(assessment) AS len FROM gold_incident_assessments")
+p1_label = [r["leading_hypothesis"] for r in assess if r["incident_id"] == "INC-20260924-E-0042"]
+check("P1 keeps both hypotheses open (Undetermined)", p1_label == ["Undetermined - needs more evidence"], p1_label)
 check("Alex has a GenAI assessment", any(r["incident_id"] == "INC-20260924-E-0042" and r["len"] > 200 for r in assess))
 bad = [r for r in assess if r["leading_hypothesis"] not in LABELS]
 check("hypothesis labels are valid", not bad, bad)

@@ -46,32 +46,38 @@ declare module "@databricks/appkit-ui/react" {
           cnt: number;
         }>;
       };
-    governed_forecast_visible: {
-        name: "governed_forecast_visible";
+    governed_orders_visible: {
+        name: "governed_orders_visible";
         parameters: Record<string, never>;
         result: Array<{
           /** @sqlType BIGINT */
           visible_rows: number;
           /** @sqlType BIGINT */
-          visible_projects: number;
+          visible_funds: number;
         }>;
       };
-    governed_vendor_sample: {
-        name: "governed_vendor_sample";
+    governed_research_sample: {
+        name: "governed_research_sample";
         parameters: Record<string, never>;
         result: Array<{
           /** @sqlType STRING */
-          vendor_id: string;
+          rating_id: string;
           /** @sqlType STRING */
-          vendor_name: string;
+          ticker: string;
           /** @sqlType STRING */
-          bank_name: string;
+          sector: string;
           /** @sqlType STRING */
-          routing_number: string;
+          current_rating: string;
           /** @sqlType STRING */
-          account_number: string;
+          new_rating: string;
+          /** @sqlType DOUBLE */
+          current_price_target: number;
+          /** @sqlType DOUBLE */
+          new_price_target: number;
+          /** @sqlType DATE */
+          planned_publish_date: string;
           /** @sqlType STRING */
-          country: string;
+          status: string;
         }>;
       };
     live_audit: {
@@ -119,9 +125,9 @@ declare module "@databricks/appkit-ui/react" {
           /** @sqlType STRING */
           principal: string;
           /** @sqlType BOOLEAN */
-          can_view_bank_details: boolean;
+          can_view_unpublished: boolean;
           /** @sqlType BOOLEAN */
-          can_view_forecast: boolean;
+          can_view_block_orders: boolean;
         }>;
       };
     restricted_accessors: {

@@ -41,7 +41,7 @@ function Layout() {
         <div className="flex items-center gap-2">
           <ShieldAlert className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-semibold text-foreground">Access &amp; Movement Investigations</h1>
-          <span className="hidden lg:inline text-xs text-muted-foreground">Halcyon Financial · synthetic demo data</span>
+          <span className="hidden lg:inline text-xs text-muted-foreground">Harborview Investment Management · synthetic demo data</span>
         </div>
         <NavLinks className="hidden md:flex gap-1 ml-4" linkClass={navLinkClass} />
         <div className="ml-auto md:hidden">

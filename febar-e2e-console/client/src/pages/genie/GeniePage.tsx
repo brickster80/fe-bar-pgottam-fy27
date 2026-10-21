@@ -9,10 +9,10 @@ interface WhoAmI {
 
 // Opening of the threat hunt (THREAT_HUNT_DEMO.md): broad first, no names; ask in order, in one conversation from step 4
 const TRY = [
-  'How is our financial data being used this quarter? For each governed financial asset show the departments using it, number of employees, queries and rows read.',
-  'Show the weekly rows read from each restricted financial asset over the quarter. Does any week stand out?',
+  'Who has access to our governed investment data, and who actually used it this quarter? For each asset show the departments entitled, number of employees entitled, employees who used it, queries and rows read.',
+  'Show the weekly rows read from each restricted investment asset over the quarter. Does any week stand out?',
   "Which department drove that week's volume on that asset, compared with its usual weekly volume?",
-  'Which client tools are used to query restricted financial assets, and how many employees use each one?',
+  'Which client tools are used to query restricted investment assets, and how many employees use each one?',
   'How many queries against restricted assets ran outside business hours, and how many rows did they return?',
   'Do the unusual tool, the off-hours queries and that spike point to the same people? Show who is behind them.',
 ];
@@ -56,7 +56,7 @@ export function GeniePage() {
       </div>
 
       <div className="h-[min(640px,66vh)] border rounded-lg overflow-hidden bg-card">
-        <GenieChat alias="e2e" placeholder="e.g. How is our financial data being used this quarter?" />
+        <GenieChat alias="e2e" placeholder="e.g. Who has access to our governed investment data?" />
       </div>
     </div>
   );

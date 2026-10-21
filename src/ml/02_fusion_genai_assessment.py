@@ -71,10 +71,12 @@ ctx AS (
     'Mitigating factors: ', coalesce(nullif(array_join(mitigating_factors, '; '), ''), 'none'), '.\n',
     'Evidence timeline (local time | source | observation):\n', coalesce(timeline_text, 'none')) AS evidence
   FROM ev
-)
+),
+scored AS (
 SELECT incident_id, employee_id, full_name, department, role, priority, fused_risk, evidence,
+  compromise_indicators, misuse_indicators,
   ai_query('databricks-claude-sonnet-4-6', concat(
-    'You are a Tier-3 insider-risk and SOC analyst at a financial company. Write a threat assessment from the evidence. ',
+    'You are a Tier-3 insider-risk and SOC analyst at an investment management firm (funds and portfolios). Write a threat assessment from the evidence. ',
     'Do NOT assume the employee is malicious. Evaluate two competing hypotheses: (H1) the employee is misusing legitimate access; ',
     '(H2) someone compromised the employee''s account or device. If the evidence is benign, say so plainly. ',
     'Use exactly these markdown sections: **Verdict** (one sentence), **Who and what** (governed asset, sensitivity, rows), ',
@@ -87,8 +89,16 @@ SELECT incident_id, employee_id, full_name, department, role, priority, fused_ri
     'Based on the evidence, which hypothesis is currently better supported? Reply with exactly one of: ',
     'Insider misuse | Account or device compromise | Undetermined - needs more evidence | Benign / explained. ',
     'Choose Undetermined when material indicators exist for BOTH misuse and compromise and nothing decisive separates them ',
-    '(e.g. no device forensics, no employee interview yet). Reply with the label only.\n\nEVIDENCE:\n', evidence))) AS leading_hypothesis,
+    '(e.g. no device forensics, no employee interview yet). Reply with the label only.\n\nEVIDENCE:\n', evidence))) AS model_label,
   current_timestamp() AS generated_at
 FROM ctx
+)
+-- Policy guard (do not assume malice): a single-hypothesis label is only kept when the evidence is one-sided
+SELECT incident_id, employee_id, full_name, department, role, priority, fused_risk, evidence, assessment,
+  CASE WHEN model_label IN ('Insider misuse', 'Account or device compromise')
+        AND size(compromise_indicators) > 0 AND size(misuse_indicators) > 0
+       THEN 'Undetermined - needs more evidence' ELSE model_label END AS leading_hypothesis,
+  generated_at
+FROM scored
 """)
 display(spark.sql("SELECT full_name, priority, fused_risk, leading_hypothesis FROM gold_incident_assessments ORDER BY fused_risk DESC"))

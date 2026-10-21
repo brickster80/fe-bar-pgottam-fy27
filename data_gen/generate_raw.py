@@ -1,9 +1,9 @@
 """
 "Authorized access, unauthorized movement" - synthetic raw data generator
 =========================================================================
-Fictional company: Halcyon Financial (halcyonfin.com). Lands RAW feeds in
+Fictional company: Harborview Investment Management (harborviewim.com), a fund and portfolio manager. Lands RAW feeds in
 /Volumes/capmarkets_stg/febar_e2e/raw_landing/ for Lakeflow to ingest, and creates
-the physical stand-ins for the three governed financial assets.
+the physical stand-ins for the three governed investment assets.
 
 Databricks-side feeds (shaped like the system tables):
   uc_audit/        system.access.audit       (getTable, generateTemporaryTableCredential, commandSubmit)
@@ -18,13 +18,13 @@ Business context:
 
 Incident (all times America/New_York local, 2026-09-24):
   21:40 Alex Morgan signs in from LOANER-NYC-07 (never associated with Alex)
-  21:43 first-ever access to finance_prod.treasury.vendor_bank_accounts
+  21:43 first-ever access to invest_prod.research.unpublished_ratings (pre-publication research)
   21:46 query returns 480,000 rows (normal daily volume ~8,000)
-  21:49 EDR: DBeaver.exe creates vendor_master_full.csv
+  21:49 EDR: DBeaver.exe creates research_pipeline_full.csv
   21:53 DLP: matching file (same sha256) uploaded to a personal Dropbox account
 Decoys:
-  Priya Shah (Accounting) - 52,000-row vendor pull under exception EXC-4471, uploaded to corporate SharePoint
-  Daniel Okafor (Treasury) - new managed laptop (device refresh), normal activity
+  Priya Shah (Compliance) - 52,000-row research surveillance pull under exception EXC-4471, uploaded to corporate SharePoint
+  Daniel Okafor (Equity Research) - new managed laptop (device refresh), normal activity
   Kevin Brooks (Engineering) - personal Dropbox upload of photos, no sensitive data access
 
 Run:  TZ=UTC DATABRICKS_CONFIG_PROFILE=e2-demo-field-eng python generate_raw.py
@@ -39,7 +39,7 @@ from pyspark.sql import types as T
 CATALOG, SCHEMA = "capmarkets_stg", "febar_e2e"
 FQ = f"{CATALOG}.{SCHEMA}"
 VOL = f"/Volumes/{CATALOG}/{SCHEMA}/raw_landing"
-DOMAIN = "halcyonfin.com"
+DOMAIN = "harborviewim.com"
 WAREHOUSE = "4b9b953939869799"          # fictional prod warehouse id in the logs
 WORKSPACE_ID = "7474650000000001"
 
@@ -49,10 +49,10 @@ START, END = date(2026, 7, 1), date(2026, 9, 30)
 N_USERS = 400
 
 # logical governed assets (what the fictional company calls them) -> physical stand-ins in this schema
-MONTHLY = "finance_prod.reporting.monthly_summary"
-VENDOR = "finance_prod.treasury.vendor_bank_accounts"
-FORECAST = "finance_prod.strategy.acquisition_forecast"
-CRM = "sales_prod.crm.opportunities"
+HOLDINGS = "invest_prod.portfolio.fund_holdings"
+RATINGS = "invest_prod.research.unpublished_ratings"
+ORDERS = "invest_prod.trading.pending_block_orders"
+CRM = "clients_prod.crm.relationships"
 WEB = "analytics_prod.web.sessions"
 
 # ---------------------------------------------------------------------------
@@ -63,13 +63,13 @@ bdays = [d for d in days if d.weekday() < 5]
 
 
 def is_close(d):
-    """Month-end close: last 3 and first 3 business days of each month."""
+    """Month-end reporting: last 3 and first 3 business days of each month (NAV, fund factsheets, client reports)."""
     same_month = [b for b in bdays if b.month == d.month]
     return d in same_month[:3] or d in same_month[-3:]
 
 
 calendar_rows = [(d.isoformat(), d.weekday() < 5, d.weekday() < 5 and is_close(d),
-                  "Month-end close" if d.weekday() < 5 and is_close(d) else ("Weekend" if d.weekday() >= 5 else "Business day"))
+                  "Month-end reporting" if d.weekday() < 5 and is_close(d) else ("Weekend" if d.weekday() >= 5 else "Business day"))
                  for d in days]
 
 # ---------------------------------------------------------------------------
@@ -81,9 +81,9 @@ FIRST = ["James", "Mary", "Robert", "Patricia", "John", "Jennifer", "Michael", "
 LAST = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez",
         "Hernandez", "Lopez", "Wilson", "Anderson", "Taylor", "Moore", "Jackson", "Patel", "Nguyen", "Kim",
         "Chen", "Okafor", "Ivanov", "Haddad", "Singh", "Rossi", "Dubois", "Sato", "Novak", "Reyes"]
-DEPTS = [("Finance", "Financial Analyst", 70), ("Accounting", "Accountant", 40), ("Treasury", "Treasury Analyst", 20),
-         ("Corporate Development", "Corp Dev Associate", 12), ("Engineering", "Software Engineer", 110),
-         ("Sales", "Account Executive", 80), ("IT", "IT Administrator", 28), ("HR", "HR Partner", 20), ("Legal", "Counsel", 20)]
+DEPTS = [("Portfolio Management", "Portfolio Analyst", 70), ("Compliance", "Compliance Analyst", 40), ("Equity Research", "Research Analyst", 20),
+         ("Trading", "Equity Trader", 12), ("Engineering", "Software Engineer", 110),
+         ("Client Service", "Relationship Manager", 80), ("IT", "IT Administrator", 28), ("HR", "HR Partner", 20), ("Legal", "Counsel", 20)]
 OFFICES = [("New York", "America/New_York", "203.0.113.10", 0.6), ("Chicago", "America/Chicago", "203.0.113.20", 0.2),
            ("London", "Europe/London", "203.0.113.30", 0.2)]
 
@@ -96,9 +96,9 @@ for dept, role, n in DEPTS:
         emp.append([i, f"E-{i:04d}", f"{first} {last}", dept, role if k > 1 else f"Senior {role}", office[0], office[1], office[2]])
         i += 1
 PERSONAS = {  # idx -> (name, dept, role, office)
-    42: ("Alex Morgan", "Finance", "Financial Analyst", OFFICES[0]),
-    95: ("Priya Shah", "Accounting", "Senior Accountant", OFFICES[0]),
-    118: ("Daniel Okafor", "Treasury", "Treasury Analyst", OFFICES[0]),
+    42: ("Alex Morgan", "Portfolio Management", "Portfolio Analyst", OFFICES[0]),
+    95: ("Priya Shah", "Compliance", "Senior Compliance Analyst", OFFICES[0]),
+    118: ("Daniel Okafor", "Equity Research", "Research Analyst", OFFICES[0]),
     150: ("Kevin Brooks", "Engineering", "Software Engineer", OFFICES[1]),
 }
 for idx, (name, dept, role, office) in PERSONAS.items():
@@ -114,9 +114,9 @@ emp_df = spark.createDataFrame([tuple(e) for e in emp], emp_schema)
 # ---------------------------------------------------------------------------
 # Devices (CMDB): one managed laptop per employee + loaner pool; Daniel gets a refresh
 # ---------------------------------------------------------------------------
-devices = [(f"DEV-{e[0]:04d}", f"HLF-LT-{e[0]:04d}", "laptop", True, e[1], "assigned", "2025-01-15") for e in emp]
+devices = [(f"DEV-{e[0]:04d}", f"HVI-LT-{e[0]:04d}", "laptop", True, e[1], "assigned", "2025-01-15") for e in emp]
 devices += [(f"DEV-L{k:02d}", f"LOANER-NYC-{k:02d}", "loaner_laptop", True, None, "pool", "2024-06-01") for k in range(1, 11)]
-devices.append(("DEV-0118B", "HLF-LT-0118B", "laptop", True, "E-0118", "assigned", "2026-09-21"))
+devices.append(("DEV-0118B", "HVI-LT-0118B", "laptop", True, "E-0118", "assigned", "2026-09-21"))
 dev_schema = "device_id string, hostname string, device_type string, managed boolean, assigned_employee_id string, assignment_status string, assigned_since string"
 
 # ---------------------------------------------------------------------------
@@ -147,24 +147,24 @@ idp = ud.select(
     F.lit("SUCCESS").alias("outcome"), F.lit("LOW").alias("risk_level"), F.lit(True).alias("device_trusted"))
 
 # Queries: asset mix by department
-q = ud.withColumn("nq", F.when(F.col("department").isin("Finance", "Accounting", "Treasury", "Corporate Development"),
+q = ud.withColumn("nq", F.when(F.col("department").isin("Portfolio Management", "Compliance", "Equity Research", "Trading"),
                                (F.rand(5) * 3 + 2).cast("int")).otherwise((F.rand(5) * 3).cast("int")))
 q = q.withColumn("qi", F.explode(F.sequence(F.lit(1), F.greatest(F.col("nq"), F.lit(1))))).where(F.col("nq") > 0)
 r = F.rand(6)
 q = q.withColumn("asset",
-    F.when(F.col("department") == "Finance",
-           F.when((r < 0.012) & (F.col("user_idx") != 42), F.lit(VENDOR)).when(r < 0.85, F.lit(MONTHLY)).otherwise(F.lit(CRM)))
-     .when(F.col("department") == "Accounting", F.when(r < 0.10, F.lit(VENDOR)).when(r < 0.70, F.lit(MONTHLY)).otherwise(F.lit(CRM)))
-     .when(F.col("department") == "Treasury", F.when(r < 0.70, F.lit(VENDOR)).otherwise(F.lit(MONTHLY)))
-     .when(F.col("department") == "Corporate Development", F.when(r < 0.60, F.lit(FORECAST)).otherwise(F.lit(MONTHLY)))
-     .when(F.col("department") == "Sales", F.lit(CRM))
-     .otherwise(F.when(r < 0.003, F.lit(FORECAST)).otherwise(F.lit(WEB))))
-base_rows = F.when(F.col("asset") == MONTHLY, F.exp(F.randn(7) * 0.35) * 2600) \
-    .when(F.col("asset") == VENDOR, F.exp(F.randn(7) * 0.5) * 450) \
-    .when(F.col("asset") == FORECAST, F.exp(F.randn(7) * 0.4) * 140) \
+    F.when(F.col("department") == "Portfolio Management",
+           F.when((r < 0.012) & (F.col("user_idx") != 42), F.lit(RATINGS)).when(r < 0.85, F.lit(HOLDINGS)).otherwise(F.lit(CRM)))
+     .when(F.col("department") == "Compliance", F.when(r < 0.10, F.lit(RATINGS)).when(r < 0.70, F.lit(HOLDINGS)).otherwise(F.lit(CRM)))
+     .when(F.col("department") == "Equity Research", F.when(r < 0.70, F.lit(RATINGS)).otherwise(F.lit(HOLDINGS)))
+     .when(F.col("department") == "Trading", F.when(r < 0.60, F.lit(ORDERS)).otherwise(F.lit(HOLDINGS)))
+     .when(F.col("department") == "Client Service", F.lit(CRM))
+     .otherwise(F.when(r < 0.003, F.lit(ORDERS)).otherwise(F.lit(WEB))))
+base_rows = F.when(F.col("asset") == HOLDINGS, F.exp(F.randn(7) * 0.35) * 2600) \
+    .when(F.col("asset") == RATINGS, F.exp(F.randn(7) * 0.5) * 450) \
+    .when(F.col("asset") == ORDERS, F.exp(F.randn(7) * 0.4) * 140) \
     .otherwise(F.exp(F.randn(7) * 0.8) * 9000)
-q = q.withColumn("produced_rows", (base_rows * F.when(F.col("close") & (F.col("asset") == MONTHLY), 2.5).otherwise(1.0)).cast("long"))
-q = q.withColumn("denied", (F.col("asset") == FORECAST) & ~F.col("department").isin("Corporate Development"))
+q = q.withColumn("produced_rows", (base_rows * F.when(F.col("close") & (F.col("asset") == HOLDINGS), 2.5).otherwise(1.0)).cast("long"))
+q = q.withColumn("denied", (F.col("asset") == ORDERS) & ~F.col("department").isin("Trading"))
 q = q.withColumn("produced_rows", F.when(F.col("denied"), F.lit(0)).otherwise(F.col("produced_rows")))
 q = q.withColumn("client_application",
     F.when(F.col("department").isin("Engineering", "IT"), F.element_at(F.array(F.lit("Databricks SQL Editor"), F.lit("Databricks Notebook"), F.lit("DBeaver 24.1")), (F.rand(8) * 3).cast("int") + 1))
@@ -174,15 +174,15 @@ q = q.withColumn("q_local", F.col("signin_local") + F.make_interval(F.lit(0), F.
     .withColumn("duration_ms", (F.col("produced_rows") * 0.4 + F.rand(12) * 3000 + 400).cast("long")) \
     .withColumn("end_time", F.col("start_time") + F.make_interval(F.lit(0), F.lit(0), F.lit(0), F.lit(0), F.lit(0), F.lit(0), F.col("duration_ms") / 1000)) \
     .withColumn("statement_id", F.expr("concat_ws('-', substr(md5(concat(session_id, qi)), 1, 8), substr(md5(concat(session_id, qi)), 9, 4), substr(md5(concat(session_id, qi)), 13, 4), substr(md5(concat(session_id, qi)), 17, 4), substr(md5(concat(session_id, qi)), 21, 12))")) \
-    .withColumn("row_bytes", F.when(F.col("asset") == VENDOR, 180).when(F.col("asset") == MONTHLY, 120).when(F.col("asset") == FORECAST, 300).otherwise(90))
+    .withColumn("row_bytes", F.when(F.col("asset") == RATINGS, 180).when(F.col("asset") == HOLDINGS, 120).when(F.col("asset") == ORDERS, 300).otherwise(90))
 QCOLS = ["statement_id", "session_id", "email", "employee_id", "user_idx", "device_id", "src_ip", "asset", "produced_rows",
          "denied", "client_application", "start_time", "end_time", "duration_ms", "row_bytes", "timezone", "department"]
 q = q.select(*QCOLS)
 q.write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}._gen_queries")
 q = spark.table(f"{FQ}._gen_queries")
 
-# Benign file exports from finance-family queries via Excel / Power BI, most saved to corporate SharePoint
-ex = q.where(F.col("department").isin("Finance", "Accounting", "Treasury") & F.col("client_application").isin("Microsoft Excel (ODBC)", "Power BI")
+# Benign file exports from investment-team queries via Excel / Power BI, most saved to corporate SharePoint
+ex = q.where(F.col("department").isin("Portfolio Management", "Compliance", "Equity Research") & F.col("client_application").isin("Microsoft Excel (ODBC)", "Power BI")
              & ~F.col("denied") & (F.rand(13) < 0.12))
 ex = ex.withColumn("file_name", F.concat(F.regexp_replace(F.element_at(F.split("asset", "\\."), 3), "_", "-"), F.lit("_"),
                                          F.date_format("start_time", "yyyyMMdd"), F.lit(".xlsx"))) \
@@ -198,7 +198,7 @@ dlp_benign = ex.where(F.rand(15) < 0.5).select(
     F.concat(F.lit("DLP-"), F.col("statement_id")).alias("event_id"),
     (F.col("file_time") + F.make_interval(F.lit(0), F.lit(0), F.lit(0), F.lit(0), F.lit(0), (F.rand(16) * 20 + 2).cast("int"), F.lit(0))).alias("timestamp"),
     "email", "device_id", F.lit("Microsoft SharePoint").alias("app"), F.lit("corporate").alias("instance_type"),
-    F.lit("halcyonfin.sharepoint.com").alias("destination"), F.lit("tenant:halcyonfin").alias("destination_account"),
+    F.lit("harborviewim.sharepoint.com").alias("destination"), F.lit("tenant:harborviewim").alias("destination_account"),
     "file_name", "sha256", F.col("size_bytes").alias("bytes"), F.lit("Upload").alias("activity"),
     F.lit("allow").alias("action"), F.lit("success").alias("outcome"), F.lit("Corporate collaboration").alias("policy"),
     F.lit(None).cast("string").alias("dlp_profile"))
@@ -233,31 +233,31 @@ scripted_q, scripted_idp, scripted_ep, scripted_dlp = [], [], [], []
 # 21:40 sign-in from loaner device never associated with Alex
 scripted_idp.append(("OKTA-" + ALEX_SESSION, utc("2026-09-24T21:40:12"), ALEX_EMAIL, LOANER, LOANER_IP, ALEX_SESSION,
                      "home", "okta_verify_push", "SUCCESS", "MEDIUM", True))
-# 21:43 first-ever vendor banking access (schema probe), 21:46 bulk pull 480,000 rows
-scripted_q.append(("01f0a7c2-alex-0001-probe", ALEX_SESSION, ALEX_EMAIL, ALEX_ID, 42, LOANER, LOANER_IP, VENDOR, 25, False,
-                   "DBeaver 24.1", utc("2026-09-24T21:43:05"), utc("2026-09-24T21:43:06"), 900, 180, "America/New_York", "Finance"))
-scripted_q.append(("01f0a7c2-alex-0002-bulk", ALEX_SESSION, ALEX_EMAIL, ALEX_ID, 42, LOANER, LOANER_IP, VENDOR, 480000, False,
-                   "DBeaver 24.1", utc("2026-09-24T21:46:10"), utc("2026-09-24T21:47:52"), 102000, 180, "America/New_York", "Finance"))
+# 21:43 first-ever access to unpublished research (schema probe), 21:46 bulk pull 480,000 rows
+scripted_q.append(("01f0a7c2-alex-0001-probe", ALEX_SESSION, ALEX_EMAIL, ALEX_ID, 42, LOANER, LOANER_IP, RATINGS, 25, False,
+                   "DBeaver 24.1", utc("2026-09-24T21:43:05"), utc("2026-09-24T21:43:06"), 900, 180, "America/New_York", "Portfolio Management"))
+scripted_q.append(("01f0a7c2-alex-0002-bulk", ALEX_SESSION, ALEX_EMAIL, ALEX_ID, 42, LOANER, LOANER_IP, RATINGS, 480000, False,
+                   "DBeaver 24.1", utc("2026-09-24T21:46:10"), utc("2026-09-24T21:47:52"), 102000, 180, "America/New_York", "Portfolio Management"))
 # 21:49 EDR: CSV materialized by the client process
 scripted_ep.append(("EDR-ALEX-0001", utc("2026-09-24T21:49:31"), LOANER, ALEX_EMAIL, "dbeaver.exe",
-                    "C:\\Users\\amorgan\\Downloads\\vendor_master_full.csv", "vendor_master_full.csv", SHA_ALEX, 86_400_000))
+                    "C:\\Users\\amorgan\\Downloads\\research_pipeline_full.csv", "research_pipeline_full.csv", SHA_ALEX, 86_400_000))
 # 21:53 DLP: upload of the same file to an unapproved personal Dropbox account
 scripted_dlp.append(("DLP-ALEX-0001", utc("2026-09-24T21:53:44"), ALEX_EMAIL, LOANER, "Dropbox", "personal", "www.dropbox.com",
-                     "dropbox-personal:dbid:AAD7Kx2mQ9", "vendor_master_full.csv", SHA_ALEX, 86_400_000, "Upload", "allow",
-                     "success", "Personal cloud - monitor", "Bank account numbers (ABA/IBAN)"))
+                     "dropbox-personal:dbid:AAD7Kx2mQ9", "research_pipeline_full.csv", SHA_ALEX, 86_400_000, "Upload", "allow",
+                     "success", "Personal cloud - monitor", "Unpublished research / price targets"))
 
-# Priya Shah decoy: large vendor pull under exception ticket, corporate destination, business hours
+# Priya Shah decoy: large research-surveillance pull under exception ticket, corporate destination, business hours
 PRIYA = EMP_IDX[95]
 SHA_PRIYA = "1b3d5f7a9c2e4f6a8b0d1c3e5f7a9b2d4c6e8f0a1b3d5f7a9c2e4f6a8b0d1c3e"
 PS = "S-E-0095-20260929-X"
 scripted_idp.append(("OKTA-" + PS, utc("2026-09-29T13:55:00"), PRIYA[8], "DEV-0095", "203.0.113.10", PS, "office", "fido2_webauthn", "SUCCESS", "LOW", True))
-scripted_q.append(("01f0b113-priya-0001-audit", PS, PRIYA[8], PRIYA[1], 95, "DEV-0095", "203.0.113.10", VENDOR, 52000, False,
-                   "Microsoft Excel (ODBC)", utc("2026-09-29T14:05:00"), utc("2026-09-29T14:05:31"), 31000, 180, "America/New_York", "Accounting"))
+scripted_q.append(("01f0b113-priya-0001-audit", PS, PRIYA[8], PRIYA[1], 95, "DEV-0095", "203.0.113.10", RATINGS, 52000, False,
+                   "Microsoft Excel (ODBC)", utc("2026-09-29T14:05:00"), utc("2026-09-29T14:05:31"), 31000, 180, "America/New_York", "Compliance"))
 scripted_ep.append(("EDR-PRIYA-0001", utc("2026-09-29T14:08:10"), "DEV-0095", PRIYA[8], "EXCEL.EXE",
-                    "C:\\Users\\pshah\\Documents\\vendor_master_audit_Q3.xlsx", "vendor_master_audit_Q3.xlsx", SHA_PRIYA, 5_600_000))
+                    "C:\\Users\\pshah\\Documents\\research_surveillance_Q3.xlsx", "research_surveillance_Q3.xlsx", SHA_PRIYA, 5_600_000))
 scripted_dlp.append(("DLP-PRIYA-0001", utc("2026-09-29T14:15:02"), PRIYA[8], "DEV-0095", "Microsoft SharePoint", "corporate",
-                     "halcyonfin.sharepoint.com", "tenant:halcyonfin", "vendor_master_audit_Q3.xlsx", SHA_PRIYA, 5_600_000,
-                     "Upload", "allow", "success", "Corporate collaboration", "Bank account numbers (ABA/IBAN)"))
+                     "harborviewim.sharepoint.com", "tenant:harborviewim", "research_surveillance_Q3.xlsx", SHA_PRIYA, 5_600_000,
+                     "Upload", "allow", "success", "Corporate collaboration", "Unpublished research / price targets"))
 # Kevin Brooks decoy: personal Dropbox upload, nothing sensitive accessed
 KEV = EMP_IDX[150]
 scripted_dlp.append(("DLP-KEVIN-0001", utc("2026-09-23T19:12:00", ZoneInfo("America/Chicago")), KEV[8], "DEV-0150", "Dropbox", "personal",
@@ -338,27 +338,27 @@ print("writing business context ...")
 emp_df.drop("user_idx", "office_ip").coalesce(1).write.mode("overwrite").option("header", True).csv(f"{VOL}/hr/")
 spark.createDataFrame(devices, dev_schema).coalesce(1).write.mode("overwrite").option("header", True).csv(f"{VOL}/devices/")
 assets = [
-    (MONTHLY, f"{FQ}.reporting_monthly_summary", "confidential", 2, "Aggregated financial results", "Routine analyst reporting", "SOX", "Finance;Accounting;Treasury;Corporate Development"),
-    (VENDOR, f"{FQ}.treasury_vendor_bank_accounts", "restricted", 3, "Vendor bank-account information", "Approved treasury workflows", "SOX;PCI-adjacent", "Treasury;Accounting;Finance"),
-    (FORECAST, f"{FQ}.strategy_acquisition_forecast", "highly_restricted", 4, "Confidential acquisition forecasts", "Restricted corporate-development analysis", "MNPI", "Corporate Development"),
-    (CRM, f"{FQ}.sales_crm_opportunities", "internal", 1, "Sales pipeline", "Sales operations", None, "Sales;Finance;Accounting"),
-    (WEB, f"{FQ}.analytics_web_sessions", "internal", 1, "Web analytics", "Product analytics", None, "Engineering;IT;HR;Legal;Sales"),
+    (HOLDINGS, f"{FQ}.portfolio_fund_holdings", "confidential", 2, "Daily positions and weights per fund (non-public until disclosed)", "Routine portfolio and fund reporting", "SEC Rule 204-2; holdings disclosure policy", "Portfolio Management;Compliance;Equity Research;Trading"),
+    (RATINGS, f"{FQ}.research_unpublished_ratings", "restricted", 3, "Rating changes, price targets and estimate revisions before publication", "Research publishing workflow", "FINRA 2241; Reg FD", "Equity Research;Compliance;Portfolio Management"),
+    (ORDERS, f"{FQ}.trading_pending_block_orders", "highly_restricted", 4, "Block orders not yet executed", "Trading desk execution only", "MNPI; Reg NMS", "Trading"),
+    (CRM, f"{FQ}.crm_client_relationships", "internal", 1, "Institutional client relationships", "Client relationship management", None, "Client Service;Portfolio Management;Compliance"),
+    (WEB, f"{FQ}.analytics_web_sessions", "internal", 1, "Web analytics", "Product analytics", None, "Engineering;IT;HR;Legal;Client Service"),
 ]
 spark.createDataFrame(assets, "asset_full_name string, physical_table string, sensitivity string, sensitivity_rank int, content string, expected_use string, regulation string, granted_departments string") \
     .coalesce(1).write.mode("overwrite").json(f"{VOL}/assets/")
 workflows = [
-    ("WF-01", "Monthly management reporting", MONTHLY, "Finance;Accounting;Treasury;Corporate Development", "Business hours, any business day"),
-    ("WF-02", "Vendor payment run", VENDOR, "Treasury", "Business hours; payment days Tue/Thu"),
-    ("WF-03", "Vendor master maintenance", VENDOR, "Accounting", "Business hours; requires exception ticket for bulk extracts"),
-    ("WF-04", "M&A modeling", FORECAST, "Corporate Development", "Business hours; deal-team only"),
-    ("WF-05", "Pipeline reporting", CRM, "Sales;Finance;Accounting", "Any"),
-    ("WF-06", "Product analytics", WEB, "Engineering;IT;HR;Legal;Sales", "Any"),
+    ("WF-01", "Portfolio and fund reporting", HOLDINGS, "Portfolio Management;Compliance;Equity Research;Trading", "Business hours, any business day"),
+    ("WF-02", "Research publishing", RATINGS, "Equity Research", "Business hours; via the research management system"),
+    ("WF-03", "Research surveillance review", RATINGS, "Compliance", "Business hours; requires exception ticket for bulk extracts"),
+    ("WF-04", "Block trade execution", ORDERS, "Trading", "Market hours; trading desk only"),
+    ("WF-05", "Client relationship reporting", CRM, "Client Service;Portfolio Management;Compliance", "Any"),
+    ("WF-06", "Product analytics", WEB, "Engineering;IT;HR;Legal;Client Service", "Any"),
 ]
 spark.createDataFrame(workflows, "workflow_id string, workflow_name string, asset_full_name string, approved_departments string, conditions string") \
     .coalesce(1).write.mode("overwrite").json(f"{VOL}/workflows/")
 exceptions = [
-    ("EXC-4471", PRIYA[1], VENDOR, "Q3 vendor master audit - full extract approved by Controller", "2026-09-28", "2026-09-30", "approved", "Controller (E-0090)"),
-    ("EXC-4302", EMP_IDX[60][1], MONTHLY, "Board pack preparation", "2026-08-25", "2026-08-29", "approved", "VP Finance (E-0045)"),
+    ("EXC-4471", PRIYA[1], RATINGS, "Q3 research-publication surveillance review - full extract approved by CCO", "2026-09-28", "2026-09-30", "approved", "Chief Compliance Officer (E-0090)"),
+    ("EXC-4302", EMP_IDX[60][1], HOLDINGS, "Quarterly holdings disclosure preparation", "2026-08-25", "2026-08-29", "approved", "Head of Portfolio Analytics (E-0045)"),
 ]
 spark.createDataFrame(exceptions, "ticket_id string, employee_id string, asset_full_name string, justification string, valid_from string, valid_to string, status string, approver string") \
     .coalesce(1).write.mode("overwrite").json(f"{VOL}/exceptions/")
@@ -366,35 +366,51 @@ spark.createDataFrame(calendar_rows, "cal_date string, is_business_day boolean, 
     .coalesce(1).write.mode("overwrite").option("header", True).csv(f"{VOL}/calendar/")
 
 # ---------------------------------------------------------------------------
-# Physical stand-ins for the governed financial assets (real UC tables)
+# Physical stand-ins for the governed investment assets (real UC tables)
 # ---------------------------------------------------------------------------
 print("writing governed business tables ...")
+FUNDS = ["Harborview Growth Fund", "Harborview Income Builder", "Harborview Global Equity", "Harborview Core Bond",
+         "Harborview Emerging Markets", "Harborview Balanced Target 2045"]
+TICKERS = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "JPM", "V", "UNH", "XOM", "LLY", "AVGO", "TSM", "ASML", "NESN", "SAP"]
+
+
+def pick(values, mod_col):
+    return F.element_at(F.array(*[F.lit(x) for x in values]), (mod_col % len(values) + 1).cast("int"))
+
+
 spark.range(0, 2400).select(
-    F.expr("date_format(add_months(date'2024-01-01', cast(id % 33 as int)), 'yyyy-MM')").alias("period"),
-    F.element_at(F.array(*[F.lit(x) for x in ["Wealth", "Capital Markets", "Retail Banking", "Insurance"]]), (F.col("id") % 4 + 1).cast("int")).alias("business_unit"),
-    F.element_at(F.array(*[F.lit(x) for x in ["Revenue", "Operating expense", "Net interest income", "Provision", "EBITDA"]]), (F.col("id") % 5 + 1).cast("int")).alias("line_item"),
-    F.round(F.rand(1) * 50_000_000, 2).alias("actual_usd"), F.round(F.rand(2) * 50_000_000, 2).alias("plan_usd"),
-).write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.reporting_monthly_summary")
+    pick(FUNDS, F.col("id")).alias("fund_name"),
+    F.expr("date_add(date'2026-09-01', cast(id % 30 as int))").alias("as_of_date"),
+    pick(TICKERS, F.col("id")).alias("ticker"),
+    pick(["Equity", "Equity", "Equity", "Fixed Income", "Cash"], F.col("id")).alias("asset_class"),
+    F.round(F.rand(1) * 5_000_000, 0).alias("shares"), F.round(F.rand(2) * 900_000_000, 2).alias("market_value_usd"),
+    F.round(F.rand(3) * 6, 3).alias("weight_pct"),
+).write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.portfolio_fund_holdings")
 spark.range(0, 6000).select(
-    F.concat(F.lit("V-"), F.lpad(F.col("id").cast("string"), 6, "0")).alias("vendor_id"),
-    F.concat(F.element_at(F.array(*[F.lit(x) for x in ["Apex", "Blue Harbor", "Cobalt", "Delta Ridge", "Evergreen", "Falcon", "Granite"]]), (F.col("id") % 7 + 1).cast("int")),
-             F.lit(" "), F.element_at(F.array(*[F.lit(x) for x in ["Supplies", "Logistics", "Consulting", "Systems", "Partners"]]), (F.col("id") % 5 + 1).cast("int"))).alias("vendor_name"),
-    F.element_at(F.array(*[F.lit(x) for x in ["JPMorgan Chase", "Bank of America", "Wells Fargo", "Citibank", "HSBC"]]), (F.col("id") % 5 + 1).cast("int")).alias("bank_name"),
-    F.lpad((F.abs(F.hash("id", F.lit(1))) % 900000000 + 100000000).cast("string"), 9, "0").alias("routing_number"),
-    F.lpad((F.abs(F.hash("id", F.lit(2))) % 9000000000 + 1000000000).cast("string"), 10, "0").alias("account_number"),
-    F.element_at(F.array(F.lit("US"), F.lit("GB"), F.lit("DE")), (F.col("id") % 3 + 1).cast("int")).alias("country"),
-    F.round(F.rand(3) * 2_000_000, 2).alias("ytd_payments_usd"),
-).write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.treasury_vendor_bank_accounts")
+    F.concat(F.lit("RR-"), F.lpad(F.col("id").cast("string"), 6, "0")).alias("rating_id"),
+    pick(TICKERS, F.col("id")).alias("ticker"),
+    pick(["Technology", "Financials", "Health Care", "Energy", "Consumer", "Industrials"], F.col("id")).alias("sector"),
+    F.concat(F.lit("E-0"), (F.col("id") % 20 + 110).cast("string")).alias("analyst_id"),
+    pick(["Buy", "Hold", "Sell"], F.col("id")).alias("current_rating"),
+    pick(["Buy", "Hold", "Sell"], F.col("id") + 1).alias("new_rating"),
+    F.round(F.rand(4) * 400 + 20, 2).alias("current_price_target"), F.round(F.rand(5) * 400 + 20, 2).alias("new_price_target"),
+    F.round(F.randn(6) * 8, 1).alias("eps_revision_pct"),
+    F.expr("date_add(date'2026-10-01', cast(id % 45 as int))").alias("planned_publish_date"),
+    pick(["Draft", "Pending compliance review", "Scheduled"], F.col("id")).alias("status"),
+).write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.research_unpublished_ratings")
 spark.range(0, 180).select(
-    F.concat(F.lit("PRJ-"), F.element_at(F.array(*[F.lit(x) for x in ["ORION", "VEGA", "LYRA", "ATLAS", "NOVA", "HELIX"]]), (F.col("id") % 6 + 1).cast("int"))).alias("project_code"),
-    F.element_at(F.array(*[F.lit(x) for x in ["Target A (fintech)", "Target B (asset mgr)", "Target C (insurer)", "Target D (payments)", "Target E (wealth)", "Target F (data)"]]), (F.col("id") % 6 + 1).cast("int")).alias("target"),
-    F.expr("date_format(add_months(date'2026-10-01', cast(id % 30 as int)), 'yyyy-MM')").alias("forecast_period"),
-    F.round(F.rand(4) * 900, 1).alias("revenue_musd"), F.round(F.rand(5) * 250, 1).alias("ebitda_musd"),
-    F.round(F.rand(6) * 4000 + 500, 0).alias("valuation_musd"), F.element_at(F.array(F.lit("Screening"), F.lit("Diligence"), F.lit("LOI")), (F.col("id") % 3 + 1).cast("int")).alias("stage"),
-).write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.strategy_acquisition_forecast")
-spark.range(0, 3000).select(F.concat(F.lit("OPP-"), F.col("id").cast("string")).alias("opportunity_id"),
-    F.round(F.rand(7) * 2e6, 0).alias("amount_usd"), F.element_at(F.array(F.lit("Prospect"), F.lit("Proposal"), F.lit("Won")), (F.col("id") % 3 + 1).cast("int")).alias("stage")) \
-    .write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.sales_crm_opportunities")
+    F.concat(F.lit("BLK-"), F.lpad(F.col("id").cast("string"), 5, "0")).alias("order_id"),
+    pick(FUNDS, F.col("id")).alias("fund_name"),
+    pick(TICKERS, F.col("id")).alias("ticker"),
+    pick(["BUY", "SELL"], F.col("id")).alias("side"),
+    F.round(F.rand(7) * 3_000_000 + 100_000, 0).alias("shares"), F.round(F.rand(8) * 400 + 20, 2).alias("limit_price"),
+    pick(["Equity", "Fixed Income"], F.col("id")).alias("desk"),
+    pick(["Staged", "Working"], F.col("id")).alias("status"),
+).write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.trading_pending_block_orders")
+spark.range(0, 3000).select(F.concat(F.lit("REL-"), F.col("id").cast("string")).alias("relationship_id"),
+    pick(["Pension", "Endowment", "Sovereign", "Insurance"], F.col("id")).alias("client_segment"),
+    F.round(F.rand(9) * 5e9, 0).alias("aum_usd"), pick(["Prospect", "Onboarding", "Active"], F.col("id")).alias("stage")) \
+    .write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.crm_client_relationships")
 spark.range(0, 5000).select(F.concat(F.lit("WS-"), F.col("id").cast("string")).alias("session_id"),
     F.expr("date_add(date'2026-07-01', cast(id % 90 as int))").alias("session_date"), (F.rand(8) * 600).cast("int").alias("duration_s")) \
     .write.mode("overwrite").option("overwriteSchema", True).saveAsTable(f"{FQ}.analytics_web_sessions")
